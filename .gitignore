@@ -216,3 +216,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+
+# Entorno virtual de Python
+.venv/
+
+# Configuración local de Visual Studio Code
+.vscode/
