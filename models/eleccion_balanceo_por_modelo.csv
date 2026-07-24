@@ -1,0 +1,4 @@
+modelo,balanceo,accuracy,precision,recall,f1,roc_auc,pr_auc
+Regresión logística,ROS,0.705,0.215,0.712,0.33,0.751,0.221
+Random Forest,ROS,0.776,0.278,0.752,0.406,0.818,0.302
+XGBoost,ROS,0.737,0.259,0.843,0.396,0.826,0.333
