@@ -1,0 +1,4 @@
+modelo,accuracy,precision,recall,f1,roc_auc,pr_auc
+Regresión logística + pesos,0.7,0.207,0.686,0.318,0.75,0.224
+Random Forest (pesos de clase),0.817,0.304,0.614,0.407,0.82,0.312
+XGBoost (pesos de clase),0.731,0.248,0.81,0.38,0.819,0.329
