@@ -1,0 +1,13 @@
+modelo,balanceo,accuracy,precision,recall,f1,roc_auc,pr_auc
+Regresión logística,sin balanceo,0.896,0.286,0.013,0.025,0.751,0.223
+Regresión logística,pesos,0.7,0.207,0.686,0.318,0.75,0.224
+Regresión logística,ROS,0.705,0.215,0.712,0.33,0.751,0.221
+Regresión logística,SMOTE,0.702,0.207,0.68,0.318,0.738,0.219
+Random Forest,sin balanceo,0.898,0.0,0.0,0.0,0.818,0.327
+Random Forest,pesos,0.817,0.304,0.614,0.407,0.82,0.312
+Random Forest,ROS,0.776,0.278,0.752,0.406,0.818,0.302
+Random Forest,SMOTE,0.869,0.186,0.085,0.117,0.773,0.231
+XGBoost,sin balanceo,0.898,0.5,0.059,0.105,0.818,0.322
+XGBoost,pesos,0.731,0.248,0.81,0.38,0.819,0.329
+XGBoost,ROS,0.737,0.259,0.843,0.396,0.826,0.333
+XGBoost,SMOTE,0.895,0.368,0.046,0.081,0.793,0.263
