@@ -1,0 +1,59 @@
+variable,importancia_media_abs
+csat_score,0.56104857
+tenure_months,0.36055374
+payment_failures,0.30811322
+monthly_logins,0.22823824
+last_login_days_ago,0.06195107
+total_revenue,0.032903153
+age,0.013872069
+avg_session_time,0.012855255
+avg_resolution_time,0.011542131
+customer_segment = SME,0.009964709
+monthly_fee,0.00657297
+nps_score,0.0064022937
+country = Germany,0.00515709
+email_open_rate,0.0034119524
+survey_response = Neutral,0.0029019336
+marketing_click_rate,0.0026839294
+country = Bangladesh,0.0022186604
+usage_growth_rate,0.0021899708
+city = Dhaka,0.0017426742
+support_tickets,0.0011844122
+complaint_type = Service,0.0011601635
+weekly_active_days,0.0010923729
+city = Toronto,0.00088671583
+features_used,0.00077544246
+discount_applied = No,0.00046778924
+contract_type = Quarterly,0.00045016245
+complaint_type = No complaint,0.0004399053
+discount_applied = Yes,0.0004321077
+contract_type = Yearly,0.00029672583
+gender = Male,0.0
+gender = Female,0.0
+referral_count,0.0
+escalations,0.0
+country = Australia,0.0
+country = India,0.0
+country = Canada,0.0
+city = Sydney,0.0
+country = UK,0.0
+city = Delhi,0.0
+city = London,0.0
+city = Berlin,0.0
+country = USA,0.0
+contract_type = Monthly,0.0
+signup_channel = Web,0.0
+signup_channel = Referral,0.0
+signup_channel = Mobile,0.0
+customer_segment = Individual,0.0
+customer_segment = Enterprise,0.0
+city = New York,0.0
+payment_method = Card,0.0
+price_increase_last_3m = No,0.0
+payment_method = PayPal,0.0
+payment_method = Bank Transfer,0.0
+complaint_type = Billing,0.0
+price_increase_last_3m = Yes,0.0
+complaint_type = Technical,0.0
+survey_response = Satisfied,0.0
+survey_response = Unsatisfied,0.0
