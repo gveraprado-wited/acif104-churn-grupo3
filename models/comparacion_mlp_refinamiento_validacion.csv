@@ -1,0 +1,4 @@
+configuracion,accuracy,precision,recall,f1,roc_auc,pr_auc
+A - Baseline,0.668,0.198,0.739,0.312,0.761,0.242
+B - Regularizada,0.699,0.215,0.739,0.333,0.777,0.25
+C - Orientada a precisión,0.823,0.26,0.399,0.314,0.762,0.244

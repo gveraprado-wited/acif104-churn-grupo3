@@ -1,0 +1,13 @@
+{
+  "modelo": "xgboost_refinado.joblib",
+  "umbral_decision": 0.56,
+  "banda_bajo": 0.24,
+  "metodo": "recall_minimo_0.80_validacion",
+  "umbral_f1_max_descartado": 0.66,
+  "justificacion": "Se descartó el umbral que maximiza F1 (0.66) porque bajaba el recall de validación a 0.569, en contra de la prioridad de negocio del proyecto. Se adoptó en su lugar el umbral que mantiene recall >= 0.80 maximizando precision dentro de esa restricción.",
+  "bandas_riesgo": {
+    "Bajo": "probabilidad < 0.24",
+    "Medio": "0.24 <= probabilidad < 0.56",
+    "Alto": "probabilidad >= 0.56"
+  }
+}

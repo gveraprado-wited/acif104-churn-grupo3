@@ -1,0 +1,195 @@
+{
+  "numericas": {
+    "age": {
+      "min": 18.0,
+      "max": 74.0,
+      "mediana": 46.0
+    },
+    "tenure_months": {
+      "min": 1.0,
+      "max": 59.0,
+      "mediana": 30.0
+    },
+    "monthly_logins": {
+      "min": 0.0,
+      "max": 54.0,
+      "mediana": 20.0
+    },
+    "weekly_active_days": {
+      "min": 0.0,
+      "max": 7.0,
+      "mediana": 3.0
+    },
+    "avg_session_time": {
+      "min": 1.0,
+      "max": 41.99641122063896,
+      "mediana": 15.161658613767617
+    },
+    "features_used": {
+      "min": 1.0,
+      "max": 15.0,
+      "mediana": 5.0
+    },
+    "usage_growth_rate": {
+      "min": -0.58,
+      "max": 0.54,
+      "mediana": 0.02
+    },
+    "last_login_days_ago": {
+      "min": 0.0,
+      "max": 80.0,
+      "mediana": 6.0
+    },
+    "monthly_fee": {
+      "min": 10.0,
+      "max": 100.0,
+      "mediana": 30.0
+    },
+    "total_revenue": {
+      "min": 10.0,
+      "max": 5900.0,
+      "mediana": 720.0
+    },
+    "payment_failures": {
+      "min": 0.0,
+      "max": 5.0,
+      "mediana": 0.0
+    },
+    "support_tickets": {
+      "min": 0.0,
+      "max": 7.0,
+      "mediana": 1.0
+    },
+    "avg_resolution_time": {
+      "min": 1.0,
+      "max": 61.821878489966416,
+      "mediana": 23.95044388185854
+    },
+    "csat_score": {
+      "min": 1.0,
+      "max": 5.0,
+      "mediana": 4.0
+    },
+    "escalations": {
+      "min": 0.0,
+      "max": 4.0,
+      "mediana": 0.0
+    },
+    "email_open_rate": {
+      "min": 0.1,
+      "max": 0.9,
+      "mediana": 0.5
+    },
+    "marketing_click_rate": {
+      "min": 0.01,
+      "max": 0.5,
+      "mediana": 0.25
+    },
+    "nps_score": {
+      "min": -100.0,
+      "max": 100.0,
+      "mediana": 19.0
+    },
+    "referral_count": {
+      "min": 0.0,
+      "max": 7.0,
+      "mediana": 1.0
+    }
+  },
+  "categoricas": {
+    "gender": {
+      "valores": [
+        "Female",
+        "Male"
+      ],
+      "default": "Male"
+    },
+    "country": {
+      "valores": [
+        "Australia",
+        "Bangladesh",
+        "Canada",
+        "Germany",
+        "India",
+        "UK",
+        "USA"
+      ],
+      "default": "Bangladesh"
+    },
+    "city": {
+      "valores": [
+        "Berlin",
+        "Delhi",
+        "Dhaka",
+        "London",
+        "New York",
+        "Sydney",
+        "Toronto"
+      ],
+      "default": "London"
+    },
+    "customer_segment": {
+      "valores": [
+        "Enterprise",
+        "Individual",
+        "SME"
+      ],
+      "default": "Individual"
+    },
+    "signup_channel": {
+      "valores": [
+        "Mobile",
+        "Referral",
+        "Web"
+      ],
+      "default": "Web"
+    },
+    "contract_type": {
+      "valores": [
+        "Monthly",
+        "Quarterly",
+        "Yearly"
+      ],
+      "default": "Monthly"
+    },
+    "payment_method": {
+      "valores": [
+        "Bank Transfer",
+        "Card",
+        "PayPal"
+      ],
+      "default": "Card"
+    },
+    "discount_applied": {
+      "valores": [
+        "No",
+        "Yes"
+      ],
+      "default": "No"
+    },
+    "price_increase_last_3m": {
+      "valores": [
+        "No",
+        "Yes"
+      ],
+      "default": "No"
+    },
+    "complaint_type": {
+      "valores": [
+        "Billing",
+        "No complaint",
+        "Service",
+        "Technical"
+      ],
+      "default": "Technical"
+    },
+    "survey_response": {
+      "valores": [
+        "Neutral",
+        "Satisfied",
+        "Unsatisfied"
+      ],
+      "default": "Satisfied"
+    }
+  }
+}
