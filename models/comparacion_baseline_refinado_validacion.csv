@@ -1,0 +1,4 @@
+configuracion,accuracy,precision,recall,f1,roc_auc,pr_auc
+Baseline (umbral 0.50),0.737,0.259,0.843,0.396,0.826,0.333
+Refinado (umbral 0.50),0.724,0.249,0.843,0.384,0.829,0.341
+"Refinado (umbral 0.56, recall>=0.80)",0.74,0.255,0.804,0.387,0.829,0.341
