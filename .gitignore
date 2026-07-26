@@ -3,6 +3,9 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# Registro de monitoreo de la app (nunca se versiona, puede acumular datos de uso)
+monitoring/*.csv
+
 # C extensions
 *.so
 
