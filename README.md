@@ -42,12 +42,27 @@ compatibilidad de versiones en `configuracion_entorno.md`).
 git clone https://github.com/gveraprado-wited/acif104-churn-grupo3.git
 cd acif104-churn-grupo3
 python -m venv .venv
-.venv\Scripts\activate
+.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-En macOS/Linux, activar el entorno con `source .venv/bin/activate` en vez de
-`.venv\Scripts\activate`.
+Si `Activate.ps1` falla con un error de política de ejecución ("no se puede
+cargar el archivo ... porque la ejecución de scripts está deshabilitada en
+este sistema"), es una restricción por defecto de PowerShell en Windows —
+corre esto una vez en esa misma terminal y vuelve a intentar activar:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
+
+Ese cambio de política solo aplica a la ventana de terminal actual, no
+requiere permisos de administrador y no modifica la configuración del
+equipo. Si se abre una terminal nueva (por ejemplo, para correr el backend
+y el frontend en paralelo), hay que repetirlo ahí también.
+
+En cmd.exe, activar con `.venv\Scripts\activate.bat` (sin el problema de
+política de ejecución, que es específico de PowerShell). En macOS/Linux,
+activar con `source .venv/bin/activate`.
 
 ## Cómo ejecutar
 
