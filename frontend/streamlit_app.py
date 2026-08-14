@@ -437,9 +437,10 @@ def show_result(result: dict):
     if result.get("actual_churn") is not None:
         actual_label = "Abandonó" if result["actual_churn"] == 1 else "Permaneció"
         st.caption(
-            f"Dato de validación (solo disponible para clientes del conjunto de "
-            f"prueba, no lo usa el modelo): este cliente **{actual_label.lower()}** "
-            f"realmente."
+            f"Resultado observado del conjunto de validación: este cliente "
+            f"**{actual_label.lower()}** realmente. Esta información se muestra "
+            f"solo con fines de demostración y no forma parte de las variables "
+            f"utilizadas por el modelo."
         )
 
     st.markdown("#### Factores que influyeron en esta predicción")
@@ -575,7 +576,7 @@ with tab_predict:
                 st.error(body.get("detail", "Error al predecir."))
 
 with tab_profile:
-    st.subheader("Buscar un cliente del conjunto de prueba")
+    st.subheader("Buscar un cliente del conjunto de validación")
     try:
         customer_ids = get_customer_ids()
     except BackendUnavailableError as error:
@@ -668,7 +669,7 @@ with tab_monitoring:
     st.divider()
     st.subheader("Desempeño validado en el conjunto de prueba")
     st.caption(
-        "Métricas offline del modelo (notebook/06_refinamiento_modelo.ipynb), "
+        "Métricas offline del modelo (notebook/08_evaluacion_final_test.ipynb), "
         "no de esta ejecución de la app: no existe todavía churn real posterior "
         "para los clientes ingresados por la app, así que estas métricas no se "
         "recalculan aquí."

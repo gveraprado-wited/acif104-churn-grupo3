@@ -41,7 +41,7 @@ def test_list_customers(client):
 
 
 def test_get_existing_customer_profile(client):
-    customer_id = customer_lookup.list_test_customer_ids()[0]
+    customer_id = customer_lookup.list_validation_customer_ids()[0]
     response = client.get(f"/customers/{customer_id}")
     assert response.status_code == 200
     body = response.json()
@@ -56,24 +56,24 @@ def test_get_nonexistent_customer_profile_returns_404(client):
 
 
 def test_predict_with_valid_data(client):
-    customer_id = customer_lookup.list_test_customer_ids()[0]
-    data = customer_lookup.get_test_customer(customer_id)
+    customer_id = customer_lookup.list_validation_customer_ids()[0]
+    data = customer_lookup.get_validation_customer(customer_id)
     response = client.post("/predict", json=data)
     assert response.status_code == 200
     assert "probability" in response.json()
 
 
 def test_predict_with_invalid_category_returns_422(client):
-    customer_id = customer_lookup.list_test_customer_ids()[0]
-    data = customer_lookup.get_test_customer(customer_id)
+    customer_id = customer_lookup.list_validation_customer_ids()[0]
+    data = customer_lookup.get_validation_customer(customer_id)
     data["gender"] = "Nonexistent_Category"
     response = client.post("/predict", json=data)
     assert response.status_code == 422
 
 
 def test_predict_with_missing_key_returns_422(client):
-    customer_id = customer_lookup.list_test_customer_ids()[0]
-    data = customer_lookup.get_test_customer(customer_id)
+    customer_id = customer_lookup.list_validation_customer_ids()[0]
+    data = customer_lookup.get_validation_customer(customer_id)
     del data["age"]
     response = client.post("/predict", json=data)
     assert response.status_code == 422
@@ -93,16 +93,16 @@ def test_predict_rejects_objectively_impossible_values(client, field, value):
     """The API must not depend solely on the Streamlit widgets' limits: it
     should reject these on its own, regardless of which client calls it.
     """
-    customer_id = customer_lookup.list_test_customer_ids()[0]
-    data = customer_lookup.get_test_customer(customer_id)
+    customer_id = customer_lookup.list_validation_customer_ids()[0]
+    data = customer_lookup.get_validation_customer(customer_id)
     data[field] = value
     response = client.post("/predict", json=data)
     assert response.status_code == 422
 
 
 def test_predict_warns_but_accepts_value_outside_historical_range(client):
-    customer_id = customer_lookup.list_test_customer_ids()[0]
-    data = customer_lookup.get_test_customer(customer_id)
+    customer_id = customer_lookup.list_validation_customer_ids()[0]
+    data = customer_lookup.get_validation_customer(customer_id)
     data["total_revenue"] = 50000  # historical max is 5900, no hard bound
     response = client.post("/predict", json=data)
     assert response.status_code == 200
@@ -110,7 +110,7 @@ def test_predict_warns_but_accepts_value_outside_historical_range(client):
 
 
 def test_monitoring_logs_successful_predictions(client):
-    customer_id = customer_lookup.list_test_customer_ids()[0]
+    customer_id = customer_lookup.list_validation_customer_ids()[0]
     client.get(f"/customers/{customer_id}")
 
     response = client.get("/monitoring")
@@ -122,8 +122,8 @@ def test_monitoring_logs_successful_predictions(client):
 
 
 def test_monitoring_logs_pydantic_validation_errors(client):
-    customer_id = customer_lookup.list_test_customer_ids()[0]
-    data = customer_lookup.get_test_customer(customer_id)
+    customer_id = customer_lookup.list_validation_customer_ids()[0]
+    data = customer_lookup.get_validation_customer(customer_id)
     data["csat_score"] = 9
     client.post("/predict", json=data)
 
@@ -134,8 +134,8 @@ def test_monitoring_logs_pydantic_validation_errors(client):
 
 
 def test_monitoring_logs_business_validation_errors(client):
-    customer_id = customer_lookup.list_test_customer_ids()[0]
-    data = customer_lookup.get_test_customer(customer_id)
+    customer_id = customer_lookup.list_validation_customer_ids()[0]
+    data = customer_lookup.get_validation_customer(customer_id)
     data["gender"] = "Nonexistent_Category"
     client.post("/predict", json=data)
 
