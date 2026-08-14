@@ -23,15 +23,6 @@ _CATEGORICAL_VARIABLES_BY_LENGTH = sorted(
 )
 
 
-def default_values() -> dict:
-    """A dict with the 30 raw columns set to their default values (median/mode)."""
-    values = {var: data["mediana"] for var, data in INPUT_SCHEMA["numericas"].items()}
-    values.update(
-        {var: data["default"] for var, data in INPUT_SCHEMA["categoricas"].items()}
-    )
-    return values
-
-
 def readable_name(technical_name: str) -> str:
     """Translates a transformed column name (with the ColumnTransformer prefix)
     back to its raw variable, e.g. 'categoricas__country_Germany' -> 'country = Germany'.

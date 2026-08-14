@@ -65,7 +65,12 @@ class ChurnPredictor:
             )
             _ = self.explainer(train_df.iloc[:1])
             self.shap_space = "probabilidad"
-        except Exception:
+        except NotImplementedError:
+            # Documented shap/XGBoost limitation: TreeExplainer with
+            # model_output="probability" doesn't yet support XGBoost's
+            # native categorical splits. Any other exception here is a
+            # real bug and should surface at startup, not be silently
+            # reinterpreted as this known, expected fallback.
             self.explainer = shap.TreeExplainer(self.model)
             self.shap_space = "margen (log-odds)"
 

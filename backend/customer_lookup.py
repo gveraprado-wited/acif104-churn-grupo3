@@ -11,6 +11,7 @@ resulting index was verified to match the official X_test/y_test 1:1.
 from functools import lru_cache
 from pathlib import Path
 
+import joblib
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
@@ -18,6 +19,30 @@ from backend.schema import RAW_COLUMNS
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PROCESSED_DATA_PATH = PROJECT_ROOT / "data" / "processed" / "customer_churn_clean.csv"
+SPLITS_ARTIFACT_PATH = PROJECT_ROOT / "artifacts" / "splits_preprocesados.joblib"
+
+
+def _verify_matches_official_split(test_df: pd.DataFrame) -> None:
+    """Guards against this reproduced split silently drifting from the
+    official one persisted by notebook/02_preprocesamiento.ipynb (e.g. a
+    scikit-learn version change, or an edited CSV) by checking it against
+    the actual y_test saved in SPLITS_ARTIFACT_PATH, instead of just
+    trusting that the split parameters stay in sync forever.
+    """
+    official_y_test = joblib.load(SPLITS_ARTIFACT_PATH)["y_test"]
+
+    if set(test_df.index) != set(official_y_test.index):
+        raise RuntimeError(
+            "customer_lookup: the reproduced test split no longer matches "
+            f"the official one persisted in {SPLITS_ARTIFACT_PATH.name}. "
+            "Re-check the split parameters against "
+            "notebook/02_preprocesamiento.ipynb."
+        )
+    if not (test_df.loc[official_y_test.index, "churn"] == official_y_test).all():
+        raise RuntimeError(
+            "customer_lookup: churn labels for the reproduced test split "
+            f"don't match {SPLITS_ARTIFACT_PATH.name}'s y_test."
+        )
 
 
 @lru_cache(maxsize=1)
@@ -33,6 +58,8 @@ def load_test_customers() -> pd.DataFrame:
     _, test_df = train_test_split(
         temp_df, test_size=0.50, random_state=42, stratify=temp_df["churn"]
     )
+
+    _verify_matches_official_split(test_df)
 
     return test_df.set_index("customer_id")[RAW_COLUMNS + ["churn"]]
 
