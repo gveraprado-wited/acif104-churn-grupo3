@@ -14,6 +14,6 @@ def predictor():
 
 @pytest.fixture(scope="session")
 def valid_customer() -> dict:
-    """The 30 raw variables of a real test-set customer."""
-    customer_id = customer_lookup.list_test_customer_ids()[0]
-    return customer_lookup.get_test_customer(customer_id)
+    """The 30 raw variables of a real validation-set customer."""
+    customer_id = customer_lookup.list_validation_customer_ids()[0]
+    return customer_lookup.get_validation_customer(customer_id)
