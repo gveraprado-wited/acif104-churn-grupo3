@@ -72,19 +72,19 @@ def predict(client: ClientInput):
 
 @app.get("/customers")
 def list_customers():
-    return {"customer_ids": customer_lookup.list_test_customer_ids()}
+    return {"customer_ids": customer_lookup.list_validation_customer_ids()}
 
 
 @app.get("/customers/{customer_id}", response_model=PredictionResult)
 def get_customer_profile(customer_id: str):
-    raw_data = customer_lookup.get_test_customer(customer_id)
+    raw_data = customer_lookup.get_validation_customer(customer_id)
     if raw_data is None:
-        detail = f"No existe el cliente '{customer_id}' en el conjunto de prueba."
+        detail = f"No existe el cliente '{customer_id}' en el conjunto de validación."
         monitoring.log_event(source="customer_profile", status="error", detail=detail)
         raise HTTPException(status_code=404, detail=detail)
 
     result = predictor.predict(raw_data)
-    result["actual_churn"] = customer_lookup.get_test_customer_actual_churn(customer_id)
+    result["actual_churn"] = customer_lookup.get_validation_customer_actual_churn(customer_id)
 
     monitoring.log_event(
         source="customer_profile",

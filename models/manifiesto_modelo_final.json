@@ -1,0 +1,10 @@
+{
+  "modelo": "xgboost_refinado.joblib",
+  "seleccionado_con": "train_validation",
+  "umbral_decision": 0.56,
+  "limite_riesgo_bajo": 0.24,
+  "random_state": 42,
+  "evaluacion_test": "notebook/08_evaluacion_final_test.ipynb",
+  "modelo_sha256": "f84dfdf5bf8fe91de81f19a06fc5499a6321f2bbdd7f8f314c718f541ca0eaca",
+  "configuracion_sha256": "2648a6f1bcba2476387914781e2d47af763597df5700173b1a9e2183d466fb45"
+}

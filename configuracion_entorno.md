@@ -11,11 +11,23 @@ Desde la raíz del repositorio:
 
 ```powershell
 python -m venv .venv
-.venv\Scripts\activate
+.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-En macOS/Linux, reemplazar la activación por `source .venv/bin/activate`.
+Si `Activate.ps1` falla con un error de política de ejecución ("no se puede
+cargar el archivo ... porque la ejecución de scripts está deshabilitada en
+este sistema"), correr una vez en esa misma terminal y reintentar:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
+
+Solo afecta a la ventana de terminal actual; hay que repetirlo en cada
+terminal nueva que se abra (por ejemplo, al correr backend y frontend en
+paralelo). En cmd.exe usar `.venv\Scripts\activate.bat` en vez de
+`Activate.ps1` (no tiene este problema). En macOS/Linux, reemplazar la
+activación por `source .venv/bin/activate`.
 
 ## Dependencias actuales
 
