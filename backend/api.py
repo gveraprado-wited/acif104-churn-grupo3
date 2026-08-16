@@ -10,8 +10,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from backend import customer_lookup, monitoring
-from backend.api_schemas import ClientInput, PredictionResult
+from backend import batch, customer_lookup, model_info, monitoring
+from backend.api_schemas import BatchPredictionResult, BatchPredictRequest, ClientInput, PredictionResult
 from backend.inference import ChurnPredictor
 from backend.schema import INPUT_SCHEMA
 
@@ -68,6 +68,39 @@ def predict(client: ClientInput):
         response_time_ms=result["response_time_ms"],
     )
     return result
+
+
+@app.post("/predict/batch", response_model=BatchPredictionResult)
+def predict_batch(request: BatchPredictRequest):
+    result = batch.run_batch(request.customers, predictor)
+
+    # Aggregate event only: never the 30 raw variables of each customer.
+    monitoring.log_event(
+        source="batch",
+        status="success" if result.summary.valid > 0 else "error",
+        response_time_ms=sum(r.response_time_ms for r in result.results),
+        detail=(
+            f"run_id={result.run_id} total={result.summary.total} "
+            f"validas={result.summary.valid} invalidas={result.summary.invalid} "
+            f"bandas={result.summary.band_counts}"
+        ),
+    )
+    return result
+
+
+@app.get("/model/info")
+def get_model_info():
+    return model_info.get_model_info(predictor)
+
+
+@app.get("/explainability/global")
+def get_global_explainability():
+    return model_info.get_global_explainability()
+
+
+@app.get("/model/metrics")
+def get_model_metrics():
+    return model_info.get_model_metrics()
 
 
 @app.get("/customers")

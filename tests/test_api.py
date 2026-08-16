@@ -145,6 +145,34 @@ def test_monitoring_logs_business_validation_errors(client):
     assert events[0]["source"] == "form"
 
 
+def test_get_model_info(client):
+    response = client.get("/model/info")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["decision_threshold"] == 0.56
+    assert body["low_band"] == 0.24
+    assert body["shap_space"] in ("probabilidad", "margen (log-odds)")
+
+
+def test_get_global_explainability(client):
+    response = client.get("/explainability/global")
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) > 0
+    assert all("variable" in row and "importancia_media_abs" in row for row in body)
+    importances = [row["importancia_media_abs"] for row in body]
+    assert importances == sorted(importances, reverse=True)
+
+
+def test_get_model_metrics(client):
+    response = client.get("/model/metrics")
+    assert response.status_code == 200
+    body = response.json()
+    for metric in ("accuracy", "precision", "recall", "f1", "roc_auc", "pr_auc"):
+        assert metric in body
+        assert 0.0 <= body[metric] <= 1.0
+
+
 def test_monitoring_logs_customer_not_found_errors(client):
     client.get("/customers/CUST_DOES_NOT_EXIST")
 

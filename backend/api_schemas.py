@@ -8,6 +8,8 @@ nps_score=250 — regardless of which client calls it. See
 `backend.schema.HARD_BOUNDS` / `NON_NEGATIVE_VARIABLES` for the reasoning
 behind each limit.
 """
+from datetime import datetime
+
 from pydantic import BaseModel, Field, create_model
 
 from backend.schema import (
@@ -50,3 +52,48 @@ class PredictionResult(BaseModel):
     input_values: dict
     range_warnings: list[str]
     actual_churn: int | None = None
+
+
+class BatchClientInput(BaseModel):
+    """One row of a batch request. `features` is deliberately untyped here
+    (not the nested `ClientInput` model): if it were, a single malformed row
+    would fail Pydantic parsing for the *entire* request body before batch.py
+    ever runs, turning "one bad row" into "the whole batch gets rejected".
+    Each row's features are instead validated against `ClientInput`
+    individually inside `batch.run_batch`, so one bad row becomes an entry
+    in `errors` and the rest of the batch still succeeds.
+    """
+    customer_id: str = Field(..., min_length=1)
+    features: dict[str, float | str]
+
+
+class BatchPredictRequest(BaseModel):
+    customers: list[BatchClientInput] = Field(..., min_length=1, max_length=100)
+
+
+class BatchResultItem(PredictionResult):
+    customer_id: str
+    row_index: int
+
+
+class BatchErrorItem(BaseModel):
+    customer_id: str | None = None
+    row_index: int
+    detail: str
+
+
+class BatchSummary(BaseModel):
+    total: int
+    valid: int
+    invalid: int
+    band_counts: dict[str, int]
+    high_risk_monthly_fee: float
+
+
+class BatchPredictionResult(BaseModel):
+    run_id: str
+    processed_at: datetime
+    model: str
+    summary: BatchSummary
+    results: list[BatchResultItem]
+    errors: list[BatchErrorItem]
