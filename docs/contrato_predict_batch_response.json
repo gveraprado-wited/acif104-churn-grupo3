@@ -1,0 +1,102 @@
+{
+  "run_id": "8b88fda0-075d-4d49-aad9-659ea882d82c",
+  "processed_at": "2026-08-16T20:40:24.625197Z",
+  "model": "xgboost_refinado.joblib",
+  "summary": {
+    "total": 3,
+    "valid": 2,
+    "invalid": 1,
+    "band_counts": {
+      "Bajo": 1,
+      "Medio": 1,
+      "Alto": 0
+    },
+    "high_risk_monthly_fee": 0.0
+  },
+  "results": [
+    {
+      "probability": 0.5501813888549805,
+      "prediction": 0,
+      "risk_band": "Medio",
+      "decision_threshold": 0.56,
+      "low_band": 0.24,
+      "shap_contributions": [
+        {
+          "variable": "payment_failures",
+          "shap": 1.1664047241210938,
+          "direction": "increases_risk"
+        },
+        {
+          "variable": "country = Germany",
+          "shap": 0.0184953766874969,
+          "direction": "increases_risk"
+        },
+        {
+          "variable": "customer_segment = SME",
+          "shap": 0.012306970544159412,
+          "direction": "increases_risk"
+        },
+        {
+          "variable": "csat_score",
+          "shap": -0.3922806680202484,
+          "direction": "decreases_risk"
+        },
+        {
+          "variable": "tenure_months",
+          "shap": -0.26201680302619934,
+          "direction": "decreases_risk"
+        },
+        {
+          "variable": "monthly_logins",
+          "shap": -0.14137715101242065,
+          "direction": "decreases_risk"
+        }
+      ],
+      "shap_space": "margen (log-odds)",
+      "response_time_ms": 22.16749999206513,
+      "input_values": {
+        "age": 24.0,
+        "tenure_months": 58.0,
+        "monthly_logins": 19.0,
+        "weekly_active_days": 5.0,
+        "avg_session_time": 23.38006497233134,
+        "features_used": 6.0,
+        "usage_growth_rate": 0.13,
+        "last_login_days_ago": 23.0,
+        "monthly_fee": 20.0,
+        "total_revenue": 1160.0,
+        "payment_failures": 2.0,
+        "support_tickets": 1.0,
+        "avg_resolution_time": 27.57292845215133,
+        "csat_score": 3.0,
+        "escalations": 0.0,
+        "email_open_rate": 0.35,
+        "marketing_click_rate": 0.49,
+        "nps_score": 80.0,
+        "referral_count": 1.0,
+        "gender": "Male",
+        "country": "Germany",
+        "city": "New York",
+        "customer_segment": "SME",
+        "signup_channel": "Web",
+        "contract_type": "Yearly",
+        "payment_method": "Card",
+        "discount_applied": "No",
+        "price_increase_last_3m": "No",
+        "complaint_type": "Service",
+        "survey_response": "Neutral"
+      },
+      "range_warnings": [],
+      "actual_churn": null,
+      "customer_id": "CUST_00003",
+      "row_index": 1
+    }
+  ],
+  "errors": [
+    {
+      "customer_id": "C-BAD-001",
+      "row_index": 3,
+      "detail": "'gender' = 'Categoria_Desconocida' no es una categoría reconocida. Valores válidos: Female, Male."
+    }
+  ]
+}
