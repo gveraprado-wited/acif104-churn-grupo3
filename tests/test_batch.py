@@ -90,6 +90,19 @@ def test_batch_probability_and_band_match_individual_predict(client):
     assert batch_result["decision_threshold"] == single["decision_threshold"]
 
 
+def test_batch_never_returns_real_actual_churn(client):
+    """Locks the guarantee from the plan (sections 5.4 and 7.3): the batch
+    path must never expose a real churn label, since `batch.py` calls
+    `predictor.predict()` directly and never touches `customer_lookup` (the
+    only place that fetches `actual_churn`). Every row's `actual_churn`
+    must be `None`, not just "nobody happened to set it".
+    """
+    response = client.post("/predict/batch", json={"customers": _batch_of(3)})
+    body = response.json()
+    assert len(body["results"]) == 3
+    assert all(result["actual_churn"] is None for result in body["results"])
+
+
 def test_batch_missing_column_only_that_row_fails(client):
     ids = customer_lookup.list_validation_customer_ids()[:2]
     good = _row(ids[0], customer_lookup.get_validation_customer(ids[0]))
