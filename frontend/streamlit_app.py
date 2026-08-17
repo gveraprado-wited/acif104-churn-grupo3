@@ -10,6 +10,7 @@ Run (with the backend already running in another terminal):
     streamlit run frontend/streamlit_app.py
 """
 import os
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -17,6 +18,8 @@ import requests
 import streamlit as st
 
 API_URL = os.environ.get("API_URL", "http://127.0.0.1:8000")
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DEMO_CSV_PATH = PROJECT_ROOT / "data" / "cartera_demo.csv"
 DISPLAY_TIMEZONE = "America/Santiago"
 
 # Per-variable form-widget config: (min, max, step, is_integer).
@@ -216,11 +219,6 @@ def get_global_explainability() -> list[dict]:
 @st.cache_data(ttl=60)
 def get_model_metrics() -> dict:
     return api_get_required("/model/metrics")
-
-
-@st.cache_data(ttl=60)
-def get_customer_ids() -> list[str]:
-    return api_get_required("/customers")["customer_ids"]
 
 
 def shap_variable_label(technical_variable: str) -> str:
@@ -511,11 +509,11 @@ with tab_upload:
         st.error(str(error))
         st.stop()
 
-    col_actions1, col_actions2 = st.columns([1, 1])
+    col_actions1, col_actions2, col_actions3 = st.columns([1, 1, 1])
     with col_actions1:
         template_csv = build_template_csv(schema)
         st.download_button(
-            label="📄 Descargar plantilla CSV de ejemplo",
+            label="📄 Descargar plantilla CSV",
             data=template_csv,
             file_name="plantilla_cartera_churn.csv",
             mime="text/csv",
@@ -523,28 +521,36 @@ with tab_upload:
         )
 
     with col_actions2:
-        if st.button("🧪 Cargar lote de demostración (clientes de validación)", help="Carga una muestra real para probar el dashboard inmediatamente."):
-            try:
-                cids = get_customer_ids()[:25]
-                sample_customers = []
-                for cid in cids:
-                    ok, prof = api_get(f"/customers/{cid}")
-                    if ok:
-                        sample_customers.append({"customer_id": cid, "features": prof["input_values"]})
-                if sample_customers:
-                    with st.spinner("Procesando lote de demostración con el modelo..."):
-                        batch_res = send_batch_request(sample_customers)
+        if DEMO_CSV_PATH.exists():
+            with open(DEMO_CSV_PATH, "r", encoding="utf-8") as f:
+                demo_csv_content = f.read()
+            st.download_button(
+                label="📥 Descargar cartera_demo.csv",
+                data=demo_csv_content,
+                file_name="cartera_demo.csv",
+                mime="text/csv",
+                help="Descarga el dataset sintético de demostración con 25 clientes operacionales.",
+            )
+
+    with col_actions3:
+        if st.button("🧪 Cargar lote demo (cartera_demo.csv)", help="Carga y procesa automáticamente el dataset sintético data/cartera_demo.csv."):
+            if not DEMO_CSV_PATH.exists():
+                st.error("No se encontró el archivo data/cartera_demo.csv en el repositorio.")
+            else:
+                try:
+                    demo_df = pd.read_csv(DEMO_CSV_PATH)
+                    st.session_state["batch_df"] = demo_df
+                    customers_payload, parse_warnings = parse_dataframe_to_payload(demo_df)
+                    with st.spinner(f"Analizando {len(customers_payload)} clientes sintéticos con `POST /predict/batch`..."):
+                        batch_res = send_batch_request(customers_payload)
                         st.session_state["batch_result"] = batch_res
-                        
-                        # Build DataFrame for display
-                        demo_rows = []
-                        for c in sample_customers:
-                            row = {"customer_id": c["customer_id"], **c["features"]}
-                            demo_rows.append(row)
-                        st.session_state["batch_df"] = pd.DataFrame(demo_rows)
-                    st.success(f"¡Lote de prueba con {len(sample_customers)} clientes cargado y procesado exitosamente!")
-            except BackendUnavailableError as e:
-                st.error(f"Error al cargar lote de prueba: {e}")
+                    summary = batch_res["summary"]
+                    st.success(
+                        f"¡Lote sintético cargado! **{summary['valid']} clientes válidos** analizados "
+                        f"({summary['invalid']} errores). Diríjase a las pestañas **Resumen** y **Clientes prioritarios**."
+                    )
+                except Exception as e:
+                    st.error(f"Error al procesar cartera_demo.csv: {e}")
 
     uploaded_file = st.file_uploader(
         "Seleccione o arrastre su archivo CSV de cartera",
