@@ -1,5 +1,6 @@
-"""Streamlit frontend: talks to the FastAPI backend over HTTP (never imports
-`backend/` directly), so the front end / back end separation is real.
+"""Streamlit frontend: Dashboard de Cartera de Clientes (ACIF104 - Grupo 3)
+Talks to the FastAPI backend over HTTP (never imports `backend/` directly and
+never reads local data or model artifacts from the filesystem).
 
 All Python identifiers in this file are in English; the string literals
 shown to the user are in Spanish (Chile-based audience).
@@ -8,8 +9,8 @@ Run (with the backend already running in another terminal):
     uvicorn backend.api:app --reload
     streamlit run frontend/streamlit_app.py
 """
+import io
 import os
-from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -17,14 +18,9 @@ import requests
 import streamlit as st
 
 API_URL = os.environ.get("API_URL", "http://127.0.0.1:8000")
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DISPLAY_TIMEZONE = "America/Santiago"
 
-# Per-variable form-widget config: (min, max, step, is_integer). `None`
-# means "no bound" (the model can still extrapolate above the historical
-# max — only variables with a real definitional limit get a max here, e.g.
-# csat_score can't exceed 5 by definition). Integer variables render without
-# decimals; counts get a non-negative floor even without a hard ceiling.
+# Per-variable form-widget config: (min, max, step, is_integer).
 NUMERIC_FIELD_CONFIG = {
     "age": (0, 120, 1, True),
     "tenure_months": (0, 600, 1, True),
@@ -47,34 +43,11 @@ NUMERIC_FIELD_CONFIG = {
     "referral_count": (0, None, 1, True),
 }
 
-FORM_GROUPS = {
-    "Demografía": ["gender", "age", "country", "city"],
-    "Contrato y uso": [
-        "customer_segment", "signup_channel", "contract_type", "tenure_months",
-        "monthly_logins", "weekly_active_days", "avg_session_time",
-        "features_used", "usage_growth_rate", "last_login_days_ago",
-    ],
-    "Facturación": [
-        "monthly_fee", "total_revenue", "payment_method", "payment_failures",
-        "discount_applied", "price_increase_last_3m",
-    ],
-    "Soporte": [
-        "support_tickets", "avg_resolution_time", "complaint_type",
-        "csat_score", "escalations",
-    ],
-    "Interacción y marketing": [
-        "email_open_rate", "marketing_click_rate", "nps_score",
-        "survey_response", "referral_count",
-    ],
-}
-
 RISK_BAND_COLOR = {"Bajo": "green", "Medio": "orange", "Alto": "red"}
 RISK_BAND_HEX = {"Bajo": "#2ecc71", "Medio": "#f1c40f", "Alto": "#e74c3c"}
 RISK_BAND_EMOJI = {"Bajo": "🙂", "Medio": "😐", "Alto": "🚨"}
 
-# How to render each raw variable's real value with its natural unit, for
-# the "factores que aumentaron/redujeron el riesgo" lists. Falls back to a
-# plain number when a variable has no specific formatter.
+# How to render each raw variable's real value with its natural unit.
 VALUE_FORMATTERS = {
     "age": lambda v: f"{v:.0f} años",
     "tenure_months": lambda v: f"{v:.0f} meses",
@@ -84,7 +57,7 @@ VALUE_FORMATTERS = {
     "features_used": lambda v: f"{v:.0f}",
     "usage_growth_rate": lambda v: f"{v:+.0%}",
     "last_login_days_ago": lambda v: f"hace {v:.0f} días",
-    "monthly_fee": lambda v: f"${v:.0f}",
+    "monthly_fee": lambda v: f"${v:,.0f}",
     "total_revenue": lambda v: f"${v:,.0f}",
     "payment_failures": lambda v: f"{v:.0f}",
     "support_tickets": lambda v: f"{v:.0f}",
@@ -131,9 +104,7 @@ VARIABLE_LABELS = {
     "referral_count": "Cantidad de referidos",
 }
 
-# Categorical values, translated for the form, charts, and explanatory text
-# (the actual value sent to the API is still the dataset's original one;
-# this is only for what the user sees).
+# Categorical values translated for UI display.
 VALUE_LABELS = {
     "Yes": "Sí",
     "No": "No",
@@ -174,42 +145,24 @@ VALUE_LABELS = {
     "Unsatisfied": "Insatisfecho",
 }
 
-# Column headers for the raw monitoring events table (English internally,
-# translated only for display so the UI stays in Spanish).
-EVENT_COLUMN_LABELS = {
-    "timestamp": "Fecha y hora",
-    "source": "Origen",
-    "status": "Resultado",
-    "probability": "Probabilidad",
-    "risk_band": "Banda de riesgo",
-    "decision_threshold": "Umbral",
-    "response_time_ms": "Tiempo de respuesta (ms)",
-    "detail": "Detalle",
+METRIC_LABELS = {
+    "accuracy": "Exactitud (Accuracy)",
+    "precision": "Precisión (Precision)",
+    "recall": "Exhaustividad (Recall)",
+    "f1": "Puntaje F1 (F1-Score)",
+    "roc_auc": "Área ROC (ROC-AUC)",
+    "pr_auc": "Área PR (PR-AUC)",
 }
-EVENT_SOURCE_LABELS = {
-    "form": "Formulario",
-    "customer_profile": "Ficha de cliente",
-    "api": "Solicitud rechazada antes de procesar",
-}
-EVENT_STATUS_LABELS = {"success": "Éxito", "error": "Error"}
 
-REQUEST_TIMEOUT_S = 10
+REQUEST_TIMEOUT_S = 15
 
 
 class BackendUnavailableError(Exception):
-    """Raised when the backend can't be reached or times out — every caller
-    turns this into a clear st.error() instead of letting the app crash or
-    hang indefinitely.
-    """
+    """Raised when the backend cannot be reached or times out."""
 
 
 def _request(method: str, path: str, **kwargs) -> tuple[bool, dict]:
-    """Shared plumbing for api_get/api_post. Returns (ok, body): `ok` is
-    False for an ordinary 4xx (invalid input, not found — the caller decides
-    what that means for its endpoint). A network failure, timeout, or 5xx is
-    NOT something a caller's success/failure branch can meaningfully handle,
-    so those raise BackendUnavailableError instead.
-    """
+    """Shared HTTP client plumbing."""
     try:
         response = requests.request(
             method, f"{API_URL}{path}", timeout=REQUEST_TIMEOUT_S, **kwargs
@@ -237,10 +190,6 @@ def api_post(path: str, json_body: dict) -> tuple[bool, dict]:
 
 
 def api_get_required(path: str) -> dict:
-    """For endpoints that should never legitimately return a 4xx (schema,
-    customer list, health, monitoring log) — any failure here is treated as
-    the backend being unavailable, not a normal business outcome.
-    """
     ok, body = api_get(path)
     if not ok:
         raise BackendUnavailableError(f"El backend devolvió un error inesperado en {path}.")
@@ -253,42 +202,30 @@ def get_schema() -> dict:
 
 
 @st.cache_data(ttl=60)
-def get_customer_ids() -> list[str]:
-    return api_get_required("/customers")["customer_ids"]
+def get_model_info() -> dict:
+    return api_get_required("/model/info")
 
 
-def form_field(variable: str, schema: dict, key_prefix: str):
-    label = VARIABLE_LABELS.get(variable, variable)
-    if variable in schema["numericas"]:
-        info = schema["numericas"][variable]
-        min_value, max_value, step, is_integer = NUMERIC_FIELD_CONFIG.get(
-            variable, (None, None, 1.0, False)
-        )
-        cast = int if is_integer else float
-        default_value = cast(round(info["mediana"])) if is_integer else float(info["mediana"])
-        return st.number_input(
-            label,
-            value=default_value,
-            min_value=cast(min_value) if min_value is not None else None,
-            max_value=cast(max_value) if max_value is not None else None,
-            step=cast(step),
-            help=f"Rango histórico observado: {info['min']:g} a {info['max']:g}.",
-            key=f"{key_prefix}_{variable}",
-        )
-    info = schema["categoricas"][variable]
-    return st.selectbox(
-        label,
-        options=info["valores"],
-        index=info["valores"].index(info["default"]),
-        format_func=lambda v: VALUE_LABELS.get(v, v),
-        key=f"{key_prefix}_{variable}",
-    )
+@st.cache_data(ttl=60)
+def get_global_explainability() -> list[dict]:
+    ok, body = api_get("/explainability/global")
+    if not ok:
+        raise BackendUnavailableError("Error al obtener la explicabilidad global.")
+    return body
+
+
+@st.cache_data(ttl=60)
+def get_model_metrics() -> dict:
+    return api_get_required("/model/metrics")
+
+
+@st.cache_data(ttl=60)
+def get_synthetic_demo_cartera() -> dict:
+    return api_get_required("/demo/cartera-sintetica")
 
 
 def shap_variable_label(technical_variable: str) -> str:
-    """Translates a variable name (or 'variable = value' for categoricals)
-    into natural language, for charts and explanatory text.
-    """
+    """Translates technical variable or 'var = val' into natural language."""
     if " = " in technical_variable:
         raw_variable, value = technical_variable.split(" = ", 1)
         label = VARIABLE_LABELS.get(raw_variable, raw_variable)
@@ -297,10 +234,7 @@ def shap_variable_label(technical_variable: str) -> str:
 
 
 def format_factor(technical_variable: str, input_values: dict) -> str:
-    """Formats a SHAP-contributing variable with its real value and unit,
-    e.g. 'Puntaje de satisfacción (1 a 5): 4/5' or 'Respuesta de encuesta:
-    Insatisfecho' — never a vague 'nivel alto/bajo'.
-    """
+    """Formats a SHAP factor with its real value and natural unit."""
     if " = " in technical_variable:
         return shap_variable_label(technical_variable)
     label = VARIABLE_LABELS.get(technical_variable, technical_variable)
@@ -312,9 +246,6 @@ def format_factor(technical_variable: str, input_values: dict) -> str:
 
 
 def build_reason_sentence(result: dict) -> str:
-    """States why the client landed in that risk band: probability vs.
-    threshold, both on the same percentage scale.
-    """
     probability_pct = result["probability"] * 100
     threshold_pct = result["decision_threshold"] * 100
     comparison = "inferior" if result["probability"] < result["decision_threshold"] else "igual o superior"
@@ -327,10 +258,6 @@ def build_reason_sentence(result: dict) -> str:
 
 
 def build_synthesis_sentence(result: dict) -> str | None:
-    """A short closing sentence naming the actual top factors on each side —
-    only when both directions are present, and only naming the real SHAP
-    factors already shown (nothing invented beyond them).
-    """
     increasing = [c for c in result["shap_contributions"] if c["direction"] == "increases_risk"]
     decreasing = [c for c in result["shap_contributions"] if c["direction"] == "decreases_risk"]
     if not increasing or not decreasing:
@@ -369,10 +296,6 @@ def build_threshold_distance_caption(result: dict) -> str:
 
 
 def draw_probability_bar(result: dict):
-    """Segmented horizontal bar (not a gauge) showing the client's
-    probability against the model's real risk bands and decision threshold —
-    easier to compare at a glance than a lone percentage.
-    """
     probability = result["probability"]
     threshold = result["decision_threshold"]
     low_band = result["low_band"]
@@ -409,275 +332,557 @@ def draw_probability_bar(result: dict):
     return fig
 
 
-def centered_pyplot(fig, width: int):
-    """Renders a matplotlib figure centered in the available width, instead
-    of left-aligned (Streamlit's default for a fixed-width image)."""
-    left, center, right = st.columns([1, 4, 1])
+def centered_pyplot(fig, width: int = 650):
+    left, center, right = st.columns([1, 6, 1])
     with center:
-        st.pyplot(fig, width=width)
+        st.pyplot(fig)
 
 
-def show_result(result: dict):
-    risk_band = result["risk_band"]
-    color = RISK_BAND_COLOR.get(risk_band, "gray")
-    emoji = RISK_BAND_EMOJI.get(risk_band, "")
+def build_template_csv(schema: dict) -> str:
+    """Creates a sample CSV template with all 30 required columns and 2 valid rows."""
+    row1 = {}
+    row2 = {}
+    
+    # Fill numeric columns
+    for var, info in schema["numericas"].items():
+        median = info["mediana"]
+        min_v = info["min"]
+        max_v = info["max"]
+        row1[var] = median
+        row2[var] = min(max_v, median * 1.2) if isinstance(median, (int, float)) else median
+        
+    # Fill categorical columns
+    for var, info in schema["categoricas"].items():
+        row1[var] = info["default"]
+        vals = info["valores"]
+        row2[var] = vals[1] if len(vals) > 1 else info["default"]
+        
+    df = pd.DataFrame([row1, row2])
+    df.insert(0, "customer_id", ["CUST_EJEMPLO_001", "CUST_EJEMPLO_002"])
+    return df.to_csv(index=False)
 
-    st.markdown(f"### {emoji} :{color}[Riesgo {risk_band.lower()}] de abandono")
-    st.metric("Probabilidad estimada", f"{result['probability']:.1%}")
 
-    for warning in result.get("range_warnings", []):
-        st.warning(warning)
+def send_batch_request(customers_payload: list[dict]) -> dict:
+    """Sends customers to POST /predict/batch in chunks of up to 100 rows."""
+    chunk_size = 100
+    all_results = []
+    all_errors = []
+    band_counts = {"Bajo": 0, "Medio": 0, "Alto": 0}
+    high_risk_monthly_fee = 0.0
 
-    st.caption("Nivel estimado de riesgo de abandono (churn)")
-    bar_fig = draw_probability_bar(result)
-    centered_pyplot(bar_fig, width=650)
-    plt.close(bar_fig)
-    st.caption(build_threshold_distance_caption(result))
-
-    if result.get("actual_churn") is not None:
-        actual_label = "Abandonó" if result["actual_churn"] == 1 else "Permaneció"
-        st.caption(
-            f"Resultado observado del conjunto de validación: este cliente "
-            f"**{actual_label.lower()}** realmente. Esta información se muestra "
-            f"solo con fines de demostración y no forma parte de las variables "
-            f"utilizadas por el modelo."
-        )
-
-    st.markdown("#### Factores que influyeron en esta predicción")
-    st.markdown(f"**¿Por qué obtuvo este resultado?** {build_reason_sentence(result)}")
-
-    increasing = [c for c in result["shap_contributions"] if c["direction"] == "increases_risk"]
-    decreasing = [c for c in result["shap_contributions"] if c["direction"] == "decreases_risk"]
-
-    col_up, col_down = st.columns(2)
-    with col_up:
-        st.markdown("**🔺 Factores que aumentaron el riesgo**")
-        if increasing:
-            for contribution in increasing:
-                st.markdown(f"- {format_factor(contribution['variable'], result['input_values'])}")
+    for i in range(0, len(customers_payload), chunk_size):
+        chunk = customers_payload[i : i + chunk_size]
+        ok, res = api_post("/predict/batch", {"customers": chunk})
+        if not ok:
+            err_detail = res.get("detail", "Error en solicitud batch")
+            if isinstance(err_detail, list):
+                err_detail = "; ".join([f"{e.get('loc', '')}: {e.get('msg', '')}" for e in err_detail])
+            for idx, item in enumerate(chunk, start=i + 1):
+                all_errors.append({
+                    "customer_id": item.get("customer_id"),
+                    "row_index": idx,
+                    "detail": str(err_detail),
+                })
         else:
-            st.caption("Ningún factor relevante empujó el riesgo hacia arriba.")
-    with col_down:
-        st.markdown("**🔻 Factores que redujeron el riesgo**")
-        if decreasing:
-            for contribution in decreasing:
-                st.markdown(f"- {format_factor(contribution['variable'], result['input_values'])}")
-        else:
-            st.caption("Ningún factor relevante empujó el riesgo hacia abajo.")
+            all_results.extend(res.get("results", []))
+            all_errors.extend(res.get("errors", []))
+            summary = res.get("summary", {})
+            for band, count in summary.get("band_counts", {}).items():
+                band_counts[band] = band_counts.get(band, 0) + count
+            high_risk_monthly_fee += summary.get("high_risk_monthly_fee", 0.0)
 
-    synthesis = build_synthesis_sentence(result)
-    if synthesis:
-        st.markdown(synthesis)
-
-    contributions = pd.DataFrame(result["shap_contributions"])
-    contributions["label"] = contributions["variable"].apply(shap_variable_label)
-    contributions = contributions.sort_values("shap")
-    colors = ["#d62728" if v > 0 else "#2ca02c" for v in contributions["shap"]]
-
-    fig, ax = plt.subplots(figsize=(6.5, 3))
-    ax.barh(contributions["label"], contributions["shap"], color=colors)
-    ax.axvline(0, color="black", linewidth=0.8)
-    ax.set_xlabel(
-        "Fuerza del efecto (rojo = aumenta el riesgo, verde = lo reduce)", fontsize=9
-    )
-    ax.tick_params(labelsize=9)
-    fig.tight_layout()
-    centered_pyplot(fig, width=650)
-    plt.close(fig)
-
-    st.caption(
-        "Estas son asociaciones que aprendió el modelo a partir de datos "
-        "históricos, no causas comprobadas: no implican que cambiar una sola "
-        "variable vaya a cambiar el resultado por sí sola. Los valores "
-        f"numéricos del gráfico están expresados en espacio de "
-        f"{result['shap_space']}: el signo indica la dirección del efecto y "
-        "la magnitud qué tan fuerte es en relación con las demás variables "
-        "de este caso — no se leen como puntos de probabilidad."
-    )
-    st.caption(f"Tiempo de respuesta: {result['response_time_ms']:.1f} ms")
+    return {
+        "summary": {
+            "total": len(customers_payload),
+            "valid": len(all_results),
+            "invalid": len(all_errors),
+            "band_counts": band_counts,
+            "high_risk_monthly_fee": high_risk_monthly_fee,
+        },
+        "results": all_results,
+        "errors": all_errors,
+    }
 
 
-@st.dialog("Resultado de la predicción", width="large")
-def show_result_modal(result: dict):
-    show_result(result)
+def parse_dataframe_to_payload(df: pd.DataFrame) -> tuple[list[dict], list[str]]:
+    """Converts user DataFrame to POST /predict/batch payload, extracting customer_id and features."""
+    warnings = []
+    id_col = None
+    for candidate in ["customer_id", "id", "ID", "cliente", "Cliente", "Customer_ID"]:
+        if candidate in df.columns:
+            id_col = candidate
+            break
+
+    if "churn" in df.columns or "actual_churn" in df.columns:
+        warnings.append("La columna 'churn' fue omitida automáticamente de las variables de entrada.")
+
+    customers_payload = []
+    for idx, row in df.iterrows():
+        cid = str(row[id_col]) if id_col else f"CUST_{idx + 1:04d}"
+        features = {}
+        for col in df.columns:
+            if col == id_col or col.lower() in ("churn", "actual_churn"):
+                continue
+            val = row[col]
+            if pd.isna(val):
+                features[col] = None
+            elif isinstance(val, (int, float)):
+                features[col] = float(val) if not float(val).is_integer() else int(val)
+            else:
+                features[col] = str(val)
+        customers_payload.append({"customer_id": cid, "features": features})
+
+    return customers_payload, warnings
 
 
-st.set_page_config(page_title="Predicción de churn", layout="wide")
+# -----------------------------------------------------------------------------
+# Streamlit Application Configuration & Setup
+# -----------------------------------------------------------------------------
+st.set_page_config(page_title="Dashboard de Cartera — Predicción de Churn", layout="wide")
 
-# On desktop the content is capped at ~70% of the window (full-bleed "wide"
-# layout isn't necessary for this app); on narrow/mobile screens it uses
-# close to the full width, with small margins instead of a fixed cap.
+# Custom CSS for container width and dashboard styling
 st.markdown(
     """
     <style>
-    @media (min-width: 768px) {
+    @media (min-width: 992px) {
         [data-testid="stMainBlockContainer"] {
-            max-width: 70%;
+            max-width: 85%;
             margin-left: auto;
             margin-right: auto;
         }
     }
-    @media (max-width: 767px) {
+    @media (max-width: 991px) {
         [data-testid="stMainBlockContainer"] {
             max-width: 96%;
             margin-left: auto;
             margin-right: auto;
         }
     }
+    .metric-card {
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        padding: 16px;
+        border: 1px solid #e9ecef;
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-st.title("Predicción de abandono de clientes")
+st.title("📊 Dashboard de Cartera — Riesgo de Abandono")
 
 try:
     health = api_get_required("/health")
-    st.caption(f"Backend conectado — modelo: {health['modelo']}")
+    st.caption(f"🟢 Backend conectado | Modelo productivo: `{health['modelo']}` | Espacio SHAP: `{health['espacio_shap']}`")
 except BackendUnavailableError:
     st.error(
-        f"No se pudo conectar al backend en {API_URL}. "
-        f"¿Está corriendo `uvicorn backend.api:app --reload`?"
+        f"❌ No se pudo conectar al backend en {API_URL}. "
+        f"Verifica que el servicio esté corriendo con: `uvicorn backend.api:app --reload`"
     )
     st.stop()
 
-tab_predict, tab_profile, tab_explainability, tab_monitoring = st.tabs(
-    ["Predicción individual", "Ficha de cliente", "Explicabilidad global", "Monitoreo"]
-)
+# Initialize session state for batch results
+if "batch_result" not in st.session_state:
+    st.session_state["batch_result"] = None
+if "batch_df" not in st.session_state:
+    st.session_state["batch_df"] = None
 
-with tab_predict:
-    st.subheader("Ingresar un cliente nuevo")
+# Tab definitions
+tab_upload, tab_summary, tab_priorities, tab_model = st.tabs([
+    "📥 Cargar cartera",
+    "📈 Resumen",
+    "🎯 Clientes prioritarios",
+    "🧠 Modelo",
+])
+
+# -----------------------------------------------------------------------------
+# TAB 1: Cargar cartera
+# -----------------------------------------------------------------------------
+with tab_upload:
+    st.subheader("Carga y Validación de Cartera de Clientes")
+    st.markdown(
+        "Cargue un archivo CSV con la información de los clientes para evaluar su probabilidad de abandono "
+        "en lote mediante el modelo de aprendizaje automático. La validación se realiza fila por fila, "
+        "permitiendo procesar registros válidos incluso si otros contienen inconsistencias."
+    )
+
     try:
         schema = get_schema()
     except BackendUnavailableError as error:
         st.error(str(error))
         st.stop()
 
-    with st.form("prediction_form"):
-        form_data = {}
-        for group_name, variables in FORM_GROUPS.items():
-            st.markdown(f"**{group_name}**")
-            columns = st.columns(3)
-            for i, variable in enumerate(variables):
-                with columns[i % 3]:
-                    form_data[variable] = form_field(variable, schema, "form")
-        submitted = st.form_submit_button("Predecir")
+    col_actions1, col_actions2, col_actions3 = st.columns([1, 1, 1])
+    with col_actions1:
+        template_csv = build_template_csv(schema)
+        st.download_button(
+            label="📄 Descargar plantilla CSV",
+            data=template_csv,
+            file_name="plantilla_cartera_churn.csv",
+            mime="text/csv",
+            help="Descarga un archivo CSV con las 30 columnas requeridas y valores de ejemplo válidos.",
+        )
 
-    if submitted:
+    with col_actions2:
         try:
-            with st.spinner("Calculando predicción y explicación del modelo...", show_time=True):
-                ok, body = api_post("/predict", form_data)
-        except BackendUnavailableError as error:
-            st.error(str(error))
-        else:
-            if ok:
-                show_result_modal(body)
-            else:
-                st.error(body.get("detail", "Error al predecir."))
+            demo_cartera = get_synthetic_demo_cartera()
+            st.download_button(
+                label="📥 Descargar cartera_demo.csv",
+                data=demo_cartera["csv_content"],
+                file_name="cartera_demo.csv",
+                mime="text/csv",
+                help="Descarga el dataset sintético de demostración con 25 clientes operacionales.",
+            )
+        except BackendUnavailableError:
+            pass
 
-with tab_profile:
-    st.subheader("Buscar un cliente del conjunto de validación")
+    with col_actions3:
+        if st.button("🧪 Cargar lote demo (cartera_demo.csv)", help="Carga y procesa automáticamente el dataset sintético servido por el backend."):
+            try:
+                demo_cartera = get_synthetic_demo_cartera()
+                demo_df = pd.read_csv(io.StringIO(demo_cartera["csv_content"]))
+                st.session_state["batch_df"] = demo_df
+                customers_payload, parse_warnings = parse_dataframe_to_payload(demo_df)
+                with st.spinner(f"Analizando {len(customers_payload)} clientes sintéticos con `POST /predict/batch`..."):
+                    batch_res = send_batch_request(customers_payload)
+                    st.session_state["batch_result"] = batch_res
+                summary = batch_res["summary"]
+                st.success(
+                    f"¡Lote sintético cargado! **{summary['valid']} clientes válidos** analizados "
+                    f"({summary['invalid']} errores). Diríjase a las pestañas **Resumen** y **Clientes prioritarios**."
+                )
+            except BackendUnavailableError as e:
+                st.error(f"Error al conectar con el backend: {e}")
+            except Exception as e:
+                st.error(f"Error al procesar cartera_demo.csv: {e}")
+
+    uploaded_file = st.file_uploader(
+        "Seleccione o arrastre su archivo CSV de cartera",
+        type=["csv"],
+        help="El archivo debe contener las variables descriptivas de cada cliente.",
+    )
+
+    if uploaded_file is not None:
+        try:
+            uploaded_df = pd.read_csv(uploaded_file)
+            st.session_state["batch_df"] = uploaded_df
+            st.markdown(f"**Vista previa del archivo cargado:** `{len(uploaded_df)} registros` y `{len(uploaded_df.columns)} columnas`")
+            st.dataframe(uploaded_df.head(10), use_container_width=True)
+
+            customers_payload, parse_warnings = parse_dataframe_to_payload(uploaded_df)
+            for w in parse_warnings:
+                st.warning(w)
+
+            if st.button("🚀 Procesar cartera con el modelo", type="primary"):
+                with st.spinner(f"Analizando {len(customers_payload)} clientes mediante `POST /predict/batch`..."):
+                    batch_res = send_batch_request(customers_payload)
+                    st.session_state["batch_result"] = batch_res
+
+                summary = batch_res["summary"]
+                if summary["valid"] > 0:
+                    st.success(
+                        f"✅ Procesamiento completado: **{summary['valid']} clientes válidos** analizados "
+                        f"({summary['invalid']} errores aislados). Diríjase a las pestañas **Resumen** y **Clientes prioritarios** para ver los resultados."
+                    )
+                else:
+                    st.error(
+                        f"⚠️ Se procesaron {summary['total']} registros pero todos presentaron errores de validación. "
+                        "Revise el detalle de inconsistencias en la pestaña Resumen."
+                    )
+        except Exception as err:
+            st.error(f"Error al leer el archivo CSV: {err}")
+
+# -----------------------------------------------------------------------------
+# TAB 2: Resumen
+# -----------------------------------------------------------------------------
+with tab_summary:
+    st.subheader("Resumen Ejecutivo y Distribución de Riesgo")
+    batch_data = st.session_state.get("batch_result")
+
+    if not batch_data or not batch_data.get("results"):
+        st.info("ℹ️ No hay resultados de cartera para mostrar. Por favor cargue y procese un archivo CSV en la pestaña **Cargar cartera**.")
+    else:
+        summary = batch_data["summary"]
+        results = batch_data["results"]
+        errors = batch_data.get("errors", [])
+
+        # KPI row
+        kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+        kpi1.metric("Clientes Procesados", f"{summary['total']}")
+        valid_rate = (summary["valid"] / summary["total"]) if summary["total"] > 0 else 0
+        kpi2.metric("Registros Válidos", f"{summary['valid']}", f"{valid_rate:.0%} éxito")
+        high_risk_count = summary["band_counts"].get("Alto", 0)
+        high_risk_pct = (high_risk_count / summary["valid"]) if summary["valid"] > 0 else 0
+        kpi3.metric("🚨 En Riesgo Alto", f"{high_risk_count}", f"{high_risk_pct:.1%} de válidos", delta_color="inverse")
+        kpi4.metric("💰 Facturación Mensual en Riesgo", f"${summary['high_risk_monthly_fee']:,.0f}")
+
+        st.divider()
+
+        col_chart1, col_chart2 = st.columns(2)
+        with col_chart1:
+            st.markdown("#### Distribución por Banda de Riesgo")
+            band_counts_data = summary["band_counts"]
+            band_names = ["Bajo", "Medio", "Alto"]
+            counts = [band_counts_data.get(b, 0) for b in band_names]
+            colors = [RISK_BAND_HEX[b] for b in band_names]
+
+            fig_band, ax_band = plt.subplots(figsize=(5, 3.2))
+            bars = ax_band.bar(band_names, counts, color=colors, edgecolor="#333333", linewidth=0.8)
+            ax_band.set_ylabel("Cantidad de Clientes", fontsize=9)
+            ax_band.tick_params(labelsize=9)
+            for bar, count in zip(bars, counts):
+                if count > 0:
+                    ax_band.text(
+                        bar.get_x() + bar.get_width() / 2,
+                        bar.get_height() + 0.1,
+                        f"{count} ({(count / max(summary['valid'], 1)):.0%})",
+                        ha="center",
+                        va="bottom",
+                        fontsize=9,
+                        fontweight="bold",
+                    )
+            for spine in ("top", "right"):
+                ax_band.spines[spine].set_visible(False)
+            fig_band.tight_layout()
+            st.pyplot(fig_band)
+            plt.close(fig_band)
+
+        with col_chart2:
+            st.markdown("#### Distribución de Probabilidades Estimadas")
+            probs = [r["probability"] for r in results]
+            if probs:
+                fig_prob, ax_prob = plt.subplots(figsize=(5, 3.2))
+                ax_prob.hist(probs, bins=10, range=(0, 1), color="#3498db", edgecolor="white", linewidth=0.8)
+                model_info = get_model_info()
+                thresh = model_info.get("decision_threshold", 0.56)
+                ax_prob.axvline(thresh, color="red", linestyle="--", linewidth=1.5, label=f"Umbral ({thresh:.0%})")
+                ax_prob.set_xlabel("Probabilidad de Abandono", fontsize=9)
+                ax_prob.set_ylabel("Frecuencia", fontsize=9)
+                ax_prob.tick_params(labelsize=9)
+                ax_prob.legend(fontsize=8)
+                for spine in ("top", "right"):
+                    ax_prob.spines[spine].set_visible(False)
+                fig_prob.tight_layout()
+                st.pyplot(fig_prob)
+                plt.close(fig_prob)
+
+        if errors:
+            st.divider()
+            with st.expander(f"⚠️ Detalle de Registros Inválidos o con Error ({len(errors)})", expanded=False):
+                st.caption(
+                    "Estos registros presentaron inconsistencias (valores fuera de rango o categorías desconocidas) "
+                    "y fueron aislados sin interrumpir el análisis del resto del lote."
+                )
+                errors_df = pd.DataFrame(errors)
+                errors_df = errors_df.rename(columns={"row_index": "Fila", "customer_id": "ID Cliente", "detail": "Detalle del Error"})
+                st.dataframe(errors_df, use_container_width=True)
+
+# -----------------------------------------------------------------------------
+# TAB 3: Clientes prioritarios
+# -----------------------------------------------------------------------------
+with tab_priorities:
+    st.subheader("Priorización Operativa y Ficha Individual con SHAP")
+    st.markdown(
+        "Lista de clientes clasificados por nivel de riesgo y ordenados descendentemente por probabilidad "
+        "de abandono para focalizar las acciones de retención inmediata."
+    )
+
+    batch_data = st.session_state.get("batch_result")
+    if not batch_data or not batch_data.get("results"):
+        st.info("ℹ️ Cargue una cartera en la pestaña **Cargar cartera** para habilitar la priorización y fichas de clientes.")
+    else:
+        results = batch_data["results"]
+
+        # Build interactive table DataFrame
+        table_rows = []
+        for r in results:
+            inp = r.get("input_values", {})
+            table_rows.append({
+                "ID": r["customer_id"],
+                "Probabilidad": r["probability"],
+                "Banda de Riesgo": r["risk_band"],
+                "Tarifa Mensual": inp.get("monthly_fee", 0),
+                "Antigüedad (meses)": inp.get("tenure_months", 0),
+                "Tickets Soporte": inp.get("support_tickets", 0),
+                "Satisfacción (CSAT)": inp.get("csat_score", 0),
+                "Tipo de Contrato": VALUE_LABELS.get(inp.get("contract_type"), inp.get("contract_type", "-")),
+                "Segmento": VALUE_LABELS.get(inp.get("customer_segment"), inp.get("customer_segment", "-")),
+                "_raw_result": r,
+            })
+
+        df_results = pd.DataFrame(table_rows)
+
+        # Filters
+        f_col1, f_col2 = st.columns([1, 2])
+        with f_col1:
+            band_filter = st.selectbox("Filtrar por Banda de Riesgo", ["Todas", "Alto", "Medio", "Bajo"], index=0)
+        with f_col2:
+            search_query = st.text_input("🔍 Buscar por ID de Cliente", "")
+
+        filtered_df = df_results.copy()
+        if band_filter != "Todas":
+            filtered_df = filtered_df[filtered_df["Banda de Riesgo"] == band_filter]
+        if search_query.strip():
+            filtered_df = filtered_df[filtered_df["ID"].astype(str).str.contains(search_query.strip(), case=False)]
+
+        filtered_df = filtered_df.sort_values("Probabilidad", ascending=False)
+
+        # Display table with formatting
+        display_df = filtered_df.drop(columns=["_raw_result"]).copy()
+        display_df["Probabilidad"] = display_df["Probabilidad"].map(lambda p: f"{p:.1%}")
+        display_df["Tarifa Mensual"] = display_df["Tarifa Mensual"].map(lambda f: f"${f:,.0f}")
+        display_df["Satisfacción (CSAT)"] = display_df["Satisfacción (CSAT)"].map(lambda s: f"{s:.0f}/5")
+
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+        st.divider()
+
+        # Individual SHAP Profile
+        st.markdown("### 🔍 Ficha Explicativa Individual (SHAP)")
+        available_ids = list(filtered_df["ID"].unique())
+
+        if not available_ids:
+            st.warning("No hay clientes que coincidan con los filtros seleccionados.")
+        else:
+            selected_id = st.selectbox("Seleccione un cliente para inspeccionar sus factores:", available_ids)
+            selected_row = filtered_df[filtered_df["ID"] == selected_id].iloc[0]
+            selected_result = selected_row["_raw_result"]
+
+            risk_band = selected_result["risk_band"]
+            color = RISK_BAND_COLOR.get(risk_band, "gray")
+            emoji = RISK_BAND_EMOJI.get(risk_band, "")
+
+            st.markdown(f"#### {emoji} Cliente `{selected_id}` — :{color}[Riesgo {risk_band.lower()}] de abandono")
+            
+            p_col1, p_col2 = st.columns([1, 2])
+            with p_col1:
+                st.metric("Probabilidad Estimada", f"{selected_result['probability']:.1%}")
+            with p_col2:
+                st.caption("Ubicación frente al umbral de decisión:")
+                bar_fig = draw_probability_bar(selected_result)
+                st.pyplot(bar_fig)
+                plt.close(bar_fig)
+                st.caption(build_threshold_distance_caption(selected_result))
+
+            for warning in selected_result.get("range_warnings", []):
+                st.warning(warning)
+
+            st.markdown("#### Factores que explicaron la predicción")
+            st.markdown(f"**¿Por qué obtuvo este resultado?** {build_reason_sentence(selected_result)}")
+
+            increasing = [c for c in selected_result["shap_contributions"] if c["direction"] == "increases_risk"]
+            decreasing = [c for c in selected_result["shap_contributions"] if c["direction"] == "decreases_risk"]
+
+            col_up, col_down = st.columns(2)
+            with col_up:
+                st.markdown("**🔺 Factores que aumentaron el riesgo**")
+                if increasing:
+                    for contribution in increasing:
+                        st.markdown(f"- {format_factor(contribution['variable'], selected_result['input_values'])}")
+                else:
+                    st.caption("Ningún factor relevante empujó el riesgo hacia arriba.")
+            with col_down:
+                st.markdown("**🔻 Factores que redujeron el riesgo**")
+                if decreasing:
+                    for contribution in decreasing:
+                        st.markdown(f"- {format_factor(contribution['variable'], selected_result['input_values'])}")
+                else:
+                    st.caption("Ningún factor relevante empujó el riesgo hacia abajo.")
+
+            synthesis = build_synthesis_sentence(selected_result)
+            if synthesis:
+                st.markdown(synthesis)
+
+            contributions = pd.DataFrame(selected_result["shap_contributions"])
+            if not contributions.empty:
+                contributions["label"] = contributions["variable"].apply(shap_variable_label)
+                contributions = contributions.sort_values("shap")
+                colors = ["#d62728" if v > 0 else "#2ca02c" for v in contributions["shap"]]
+
+                fig, ax = plt.subplots(figsize=(6.5, 3))
+                ax.barh(contributions["label"], contributions["shap"], color=colors)
+                ax.axvline(0, color="black", linewidth=0.8)
+                ax.set_xlabel("Fuerza del efecto (rojo = aumenta el riesgo, verde = lo reduce)", fontsize=9)
+                ax.tick_params(labelsize=9)
+                fig.tight_layout()
+                centered_pyplot(fig, width=650)
+                plt.close(fig)
+
+                st.caption(
+                    "Valores calculados mediante explicaciones locales SHAP (TreeExplainer) expresados en espacio de "
+                    f"`{selected_result['shap_space']}`. La magnitud y dirección representan la contribución marginal de cada variable."
+                )
+
+# -----------------------------------------------------------------------------
+# TAB 4: Modelo
+# -----------------------------------------------------------------------------
+with tab_model:
+    st.subheader("Gobernanza, Umbrales y Métricas del Modelo")
+    st.markdown(
+        "Información técnica y métricas de desempeño validadas sobre el conjunto de prueba independiente. "
+        "Todos los datos de esta vista se consultan en tiempo real vía HTTP desde los endpoints del backend."
+    )
+
     try:
-        customer_ids = get_customer_ids()
+        model_info = get_model_info()
+        metrics = get_model_metrics()
+        global_shap = get_global_explainability()
     except BackendUnavailableError as error:
         st.error(str(error))
         st.stop()
 
-    customer_id = st.selectbox("Cliente", options=customer_ids, key="profile_customer_id")
-
-    if st.button("Ver ficha"):
-        try:
-            with st.spinner("Calculando predicción y explicación del modelo...", show_time=True):
-                ok, body = api_get(f"/customers/{customer_id}")
-        except BackendUnavailableError as error:
-            st.error(str(error))
-        else:
-            if ok:
-                show_result_modal(body)
-            else:
-                st.error(body.get("detail", "Cliente no encontrado."))
-
-with tab_explainability:
-    st.subheader("Importancia global de variables (SHAP)")
-    st.caption(
-        "Calculada una sola vez sobre el conjunto de validación en "
-        "notebook/07_explicabilidad_shap.ipynb — no se recalcula en la app."
-    )
-    importance_path = PROJECT_ROOT / "models" / "shap_importancia_global.csv"
-    if importance_path.exists():
-        importance = pd.read_csv(importance_path).head(15).copy()
-        importance["label"] = importance["variable"].apply(shap_variable_label)
-        importance = importance.sort_values("importancia_media_abs")
-        fig, ax = plt.subplots(figsize=(9, 5.5))
-        ax.barh(importance["label"], importance["importancia_media_abs"])
-        ax.set_xlabel(
-            "Importancia media (cuánto influye, en promedio, en las predicciones)",
-            fontsize=10,
-        )
-        ax.tick_params(labelsize=10)
-        fig.tight_layout()
-        centered_pyplot(fig, width=850)
-        plt.close(fig)
-    else:
-        st.warning("No se encontró models/shap_importancia_global.csv.")
-
-with tab_monitoring:
-    st.subheader("Actividad de la aplicación")
-    try:
-        events = api_get_required("/monitoring")
-    except BackendUnavailableError as error:
-        st.error(str(error))
-        events = []
-
-    if events:
-        events_df = pd.DataFrame(events)
-        successes = events_df[events_df["status"] == "success"]
-
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Solicitudes registradas", len(events_df))
-        col2.metric(
-            "Tasa de éxito",
-            f"{(events_df['status'] == 'success').mean():.0%}",
-        )
-        col3.metric(
-            "Tiempo de respuesta promedio",
-            f"{successes['response_time_ms'].mean():.1f} ms" if len(successes) else "—",
-        )
-        col4.metric(
-            "% en banda Alto (éxitos)",
-            f"{(successes['risk_band'] == 'Alto').mean():.0%}" if len(successes) else "—",
-        )
-        if len(successes):
-            st.bar_chart(successes["risk_band"].value_counts(), height=220)
-        with st.expander("Ver eventos registrados"):
-            display_df = events_df.copy()
-            display_df["timestamp"] = (
-                pd.to_datetime(display_df["timestamp"])
-                .dt.tz_convert(DISPLAY_TIMEZONE)
-                .dt.strftime("%d/%m/%Y %H:%M")
-            )
-            # .fillna(original) so an unmapped future value shows as-is
-            # instead of silently turning into "None".
-            display_df["source"] = display_df["source"].map(EVENT_SOURCE_LABELS).fillna(display_df["source"])
-            display_df["status"] = display_df["status"].map(EVENT_STATUS_LABELS).fillna(display_df["status"])
-            display_df = display_df.fillna("")  # empty prediction fields on error rows, not "None"
-            display_df = display_df.rename(columns=EVENT_COLUMN_LABELS)
-            st.dataframe(display_df, width="stretch")
-    else:
-        st.info("Todavía no se registran predicciones en esta sesión.")
+    # Model configuration cards
+    st.markdown("#### Configuración Operativa")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Modelo Activo", model_info.get("model", "xgboost_refinado.joblib"))
+    c2.metric("Umbral de Decisión", f"{model_info.get('decision_threshold', 0.56):.0%}")
+    c3.metric("Límite Banda Baja", f"{model_info.get('low_band', 0.24):.0%}")
+    c4.metric("Espacio SHAP", model_info.get("shap_space", "margen"))
 
     st.divider()
-    st.subheader("Desempeño validado en el conjunto de prueba")
+
+    # Test metrics
+    st.markdown("#### Desempeño Validado (Conjunto de Prueba Independiente)")
     st.caption(
-        "Métricas offline del modelo (notebook/08_evaluacion_final_test.ipynb), "
-        "no de esta ejecución de la app: no existe todavía churn real posterior "
-        "para los clientes ingresados por la app, así que estas métricas no se "
-        "recalculan aquí."
+        "Métricas offline congeladas en la evaluación final. Reflejan el comportamiento real del modelo "
+        "ante clientes no vistos durante el entrenamiento ni la selección de hiperparámetros."
     )
-    metrics_path = PROJECT_ROOT / "models" / "metricas_test_modelo_refinado.csv"
-    if metrics_path.exists():
-        metrics = pd.read_csv(metrics_path)
-        metrics.columns = ["métrica", "valor"]
-        st.dataframe(metrics, width="stretch", hide_index=True)
+
+    m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+    m_col1.metric("Exhaustividad (Recall)", f"{metrics.get('recall', 0):.1%}")
+    m_col2.metric("Precisión (Precision)", f"{metrics.get('precision', 0):.1%}")
+    m_col3.metric("F1-Score", f"{metrics.get('f1', 0):.1%}")
+    m_col4.metric("Área ROC (ROC-AUC)", f"{metrics.get('roc_auc', 0):.3f}")
+
+    metrics_display = []
+    for k, val in metrics.items():
+        metrics_display.append({
+            "Métrica": METRIC_LABELS.get(k, k.upper()),
+            "Valor": f"{val:.1%}" if val <= 1.0 else f"{val:.3f}",
+        })
+    st.dataframe(pd.DataFrame(metrics_display), use_container_width=True, hide_index=True)
+
+    st.divider()
+
+    # Global SHAP feature importance
+    st.markdown("#### Importancia Global de Variables (SHAP)")
+    st.caption(
+        "Importancia media absoluta de cada variable sobre el conjunto de validación, consumida vía `GET /explainability/global`."
+    )
+
+    if global_shap:
+        df_global = pd.DataFrame(global_shap).head(15).copy()
+        df_global["label"] = df_global["variable"].apply(shap_variable_label)
+        df_global = df_global.sort_values("importancia_media_abs", ascending=True)
+
+        fig_glob, ax_glob = plt.subplots(figsize=(8, 5))
+        ax_glob.barh(df_global["label"], df_global["importancia_media_abs"], color="#2b5c8f")
+        ax_glob.set_xlabel("Impacto medio absoluto en la probabilidad de abandono (|SHAP|)", fontsize=9)
+        ax_glob.tick_params(labelsize=9)
+        for spine in ("top", "right"):
+            ax_glob.spines[spine].set_visible(False)
+        fig_glob.tight_layout()
+        centered_pyplot(fig_glob, width=800)
+        plt.close(fig_glob)
     else:
-        st.warning("No se encontró models/metricas_test_modelo_refinado.csv.")
+        st.info("No se pudieron cargar los datos de importancia global.")
