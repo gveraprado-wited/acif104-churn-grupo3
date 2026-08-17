@@ -6,10 +6,12 @@ Analiza un dataset de clientes de una empresa de suscripción y desarrolla un
 modelo de aprendizaje automático para predecir el riesgo de abandono
 (*churn*). Incluye el análisis exploratorio, la comparación de técnicas de
 ML/DL, el refinamiento del modelo final y un prototipo de aplicación
-(backend + frontend) que permite ingresar un cliente nuevo o consultar uno
-del conjunto de validación, ver su probabilidad de abandono, entender por qué
+(backend + frontend) orientado a análisis de cartera: cargar un archivo CSV
+con varios clientes, procesarlos en lote, ver un resumen ejecutivo con KPIs y
+distribución de riesgo, priorizar a quién revisar primero, entender por qué
 el modelo llegó a ese resultado (SHAP) y revisar el uso de la aplicación
-(monitoreo).
+(monitoreo). También permite ingresar un cliente nuevo o consultar uno del
+conjunto de validación de forma individual.
 
 ## Integrantes
 
@@ -26,9 +28,9 @@ el modelo llegó a ese resultado (SHAP) y revisar el uso de la aplicación
 | `artifacts/` | Preprocesador ajustado y particiones train/val/test ya transformadas, generados por `notebook/02_preprocesamiento.ipynb`. |
 | `models/` | Modelos entrenados (`.joblib`, `.pt`), umbral de decisión, métricas e importancia global de SHAP. |
 | `figures/` | Gráficos generados por los notebooks y capturas de la aplicación. |
-| `backend/` | API de inferencia (FastAPI): esquema de entrada, validación, predicción, explicabilidad y monitoreo. |
-| `frontend/` | Aplicación Streamlit que consume el backend por HTTP. |
-| `tests/` | Pruebas automatizadas del backend (`pytest`). |
+| `backend/` | API de inferencia (FastAPI): esquema de entrada, validación, predicción individual y por lote (`batch.py`), explicabilidad y métricas del modelo (`model_info.py`), y monitoreo. |
+| `frontend/` | Aplicación Streamlit (dashboard de cartera) que consume el backend únicamente por HTTP, sin acceder a `models/`, `artifacts/` ni `data/` directamente. |
+| `tests/` | Pruebas automatizadas del backend (`pytest`), incluyendo el contrato del endpoint por lote (`test_batch.py`). |
 | `monitoring/` | Registro de predicciones de la app, generado en tiempo de ejecución (no se versiona). |
 | `reports/` | Informes de las entregas del curso (`.docx`). |
 | `configuracion_entorno.md` | Detalle del entorno de desarrollo, hardware y verificaciones de compatibilidad. |
@@ -122,29 +124,45 @@ Se abre automáticamente en <http://localhost:8501>. Si el backend no está
 corriendo, la app lo indica con un mensaje de error en vez de fallar en
 silencio.
 
+La interfaz está organizada en cuatro pestañas orientadas al análisis de
+cartera: **Cargar cartera** (plantilla CSV descargable, carga de archivo o
+del dataset sintético de demostración `data/cartera_demo.csv`, y validación
+fila por fila mediante `POST /predict/batch`), **Resumen** (KPIs y
+distribución de riesgo de la cartera procesada), **Clientes prioritarios**
+(tabla ordenada por probabilidad, con ficha individual y explicación SHAP) y
+**Modelo** (versión, umbral y métricas finales, obtenidos por HTTP desde
+`GET /model/info`, `GET /model/metrics` y `GET /explainability/global`).
+
 ### 3. Pruebas automatizadas
 
 ```powershell
 pytest tests/
 ```
 
-44 pruebas: validación de entradas (incluyendo los límites objetivamente
+61 pruebas: validación de entradas (incluyendo los límites objetivamente
 imposibles rechazados por la API, ej. csat_score fuera de 1-5), cálculo de
 la predicción, agregación correcta de SHAP para variables categóricas,
 clasificación del riesgo, registro de monitoreo (éxitos y errores), los
-seis endpoints de la API, y que los clientes que expone `customer_lookup`
-correspondan efectivamente al conjunto de validación (comparando sus
-etiquetas de churn contra `y_val`, no solo el conteo). No requieren que el
-backend esté corriendo — usan el `TestClient` de FastAPI directamente.
+endpoints de la API (incluyendo `/model/info`, `/model/metrics`,
+`/explainability/global` y la cartera sintética de demostración), y que los
+clientes que expone `customer_lookup` correspondan efectivamente al conjunto
+de validación (comparando sus etiquetas de churn contra `y_val`, no solo el
+conteo). El contrato de `POST /predict/batch` se prueba aparte
+(`test_batch.py`): lotes válidos, mixtos, vacíos, de más de 100 filas, con
+`customer_id` duplicado, con columnas faltantes o categorías desconocidas
+(aislando solo la fila afectada), que la probabilidad y banda coincidan
+exactamente con `/predict` para el mismo cliente, que `churn` nunca se
+acepte como entrada, que `actual_churn` nunca se devuelva en el lote, y que
+el evento de monitoreo agregado no guarde las variables crudas de cada
+cliente. Ninguna prueba requiere que el backend esté corriendo — usan el
+`TestClient` de FastAPI directamente.
 
 ## Modelo final
 
 XGBoost + Random Over-Sampling (ROS), refinado en
 `notebook/06_refinamiento_modelo.ipynb`. Umbral de decisión: 0,56 (banda de
 riesgo baja bajo 0,24), elegido para mantener recall ≥ 0,80 en validación —
-la justificación completa está en la sección 4.5.3 del informe (esa sección
-del informe describe el estado previo a la reestructuración que separó la
-evaluación de prueba en el notebook 08; se corrige en la rama documental).
+la justificación completa está en la sección 4.3 del informe (`reports/`).
 
 El modelo y el umbral quedan congelados al final del notebook 06, con
 `models/manifiesto_modelo_final.json` como evidencia verificable de ese
