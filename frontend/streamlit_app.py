@@ -1,6 +1,6 @@
 """Streamlit frontend: Dashboard de Cartera de Clientes (ACIF104 - Grupo 3)
 Talks to the FastAPI backend over HTTP (never imports `backend/` directly and
-never reads local model artifacts from the filesystem).
+never reads local data or model artifacts from the filesystem).
 
 All Python identifiers in this file are in English; the string literals
 shown to the user are in Spanish (Chile-based audience).
@@ -9,8 +9,8 @@ Run (with the backend already running in another terminal):
     uvicorn backend.api:app --reload
     streamlit run frontend/streamlit_app.py
 """
+import io
 import os
-from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -18,8 +18,6 @@ import requests
 import streamlit as st
 
 API_URL = os.environ.get("API_URL", "http://127.0.0.1:8000")
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEMO_CSV_PATH = PROJECT_ROOT / "data" / "cartera_demo.csv"
 DISPLAY_TIMEZONE = "America/Santiago"
 
 # Per-variable form-widget config: (min, max, step, is_integer).
@@ -219,6 +217,11 @@ def get_global_explainability() -> list[dict]:
 @st.cache_data(ttl=60)
 def get_model_metrics() -> dict:
     return api_get_required("/model/metrics")
+
+
+@st.cache_data(ttl=60)
+def get_synthetic_demo_cartera() -> dict:
+    return api_get_required("/demo/cartera-sintetica")
 
 
 def shap_variable_label(technical_variable: str) -> str:
@@ -521,36 +524,37 @@ with tab_upload:
         )
 
     with col_actions2:
-        if DEMO_CSV_PATH.exists():
-            with open(DEMO_CSV_PATH, "r", encoding="utf-8") as f:
-                demo_csv_content = f.read()
+        try:
+            demo_cartera = get_synthetic_demo_cartera()
             st.download_button(
                 label="📥 Descargar cartera_demo.csv",
-                data=demo_csv_content,
+                data=demo_cartera["csv_content"],
                 file_name="cartera_demo.csv",
                 mime="text/csv",
                 help="Descarga el dataset sintético de demostración con 25 clientes operacionales.",
             )
+        except BackendUnavailableError:
+            pass
 
     with col_actions3:
-        if st.button("🧪 Cargar lote demo (cartera_demo.csv)", help="Carga y procesa automáticamente el dataset sintético data/cartera_demo.csv."):
-            if not DEMO_CSV_PATH.exists():
-                st.error("No se encontró el archivo data/cartera_demo.csv en el repositorio.")
-            else:
-                try:
-                    demo_df = pd.read_csv(DEMO_CSV_PATH)
-                    st.session_state["batch_df"] = demo_df
-                    customers_payload, parse_warnings = parse_dataframe_to_payload(demo_df)
-                    with st.spinner(f"Analizando {len(customers_payload)} clientes sintéticos con `POST /predict/batch`..."):
-                        batch_res = send_batch_request(customers_payload)
-                        st.session_state["batch_result"] = batch_res
-                    summary = batch_res["summary"]
-                    st.success(
-                        f"¡Lote sintético cargado! **{summary['valid']} clientes válidos** analizados "
-                        f"({summary['invalid']} errores). Diríjase a las pestañas **Resumen** y **Clientes prioritarios**."
-                    )
-                except Exception as e:
-                    st.error(f"Error al procesar cartera_demo.csv: {e}")
+        if st.button("🧪 Cargar lote demo (cartera_demo.csv)", help="Carga y procesa automáticamente el dataset sintético servido por el backend."):
+            try:
+                demo_cartera = get_synthetic_demo_cartera()
+                demo_df = pd.read_csv(io.StringIO(demo_cartera["csv_content"]))
+                st.session_state["batch_df"] = demo_df
+                customers_payload, parse_warnings = parse_dataframe_to_payload(demo_df)
+                with st.spinner(f"Analizando {len(customers_payload)} clientes sintéticos con `POST /predict/batch`..."):
+                    batch_res = send_batch_request(customers_payload)
+                    st.session_state["batch_result"] = batch_res
+                summary = batch_res["summary"]
+                st.success(
+                    f"¡Lote sintético cargado! **{summary['valid']} clientes válidos** analizados "
+                    f"({summary['invalid']} errores). Diríjase a las pestañas **Resumen** y **Clientes prioritarios**."
+                )
+            except BackendUnavailableError as e:
+                st.error(f"Error al conectar con el backend: {e}")
+            except Exception as e:
+                st.error(f"Error al procesar cartera_demo.csv: {e}")
 
     uploaded_file = st.file_uploader(
         "Seleccione o arrastre su archivo CSV de cartera",

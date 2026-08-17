@@ -180,3 +180,13 @@ def test_monitoring_logs_customer_not_found_errors(client):
     assert len(events) == 1
     assert events[0]["status"] == "error"
     assert events[0]["source"] == "customer_profile"
+
+
+def test_get_synthetic_demo_cartera(client):
+    response = client.get("/demo/cartera-sintetica")
+    assert response.status_code == 200
+    body = response.json()
+    assert "csv_content" in body
+    assert "DEMO-001" in body["csv_content"]
+    assert "churn" not in body["csv_content"].lower().split("\n")[0].split(",")
+

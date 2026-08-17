@@ -130,6 +130,23 @@ def get_customer_profile(customer_id: str):
     return result
 
 
+@app.get("/demo/cartera-sintetica")
+def get_synthetic_demo_cartera():
+    """Serves the synthetic demo dataset (data/cartera_demo.csv) over HTTP so the
+    frontend never accesses data/ directly on the filesystem (section 10).
+    """
+    demo_path = model_info.PROJECT_ROOT / "data" / "cartera_demo.csv"
+    if not demo_path.exists():
+        raise HTTPException(status_code=404, detail="No se encontró data/cartera_demo.csv.")
+
+    with open(demo_path, "r", encoding="utf-8") as f:
+        csv_content = f.read()
+
+    return {
+        "csv_content": csv_content,
+    }
+
+
 @app.get("/monitoring")
 def get_monitoring():
     # Error events leave the prediction fields empty, which pandas reads
@@ -143,3 +160,4 @@ def get_monitoring():
             if isinstance(value, float) and math.isnan(value):
                 record[key] = None
     return records
+
