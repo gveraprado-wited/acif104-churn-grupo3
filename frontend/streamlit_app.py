@@ -362,66 +362,98 @@ def build_template_csv(schema: dict) -> str:
     return df.to_csv(index=False)
 
 
-def send_batch_request(customers_payload: list[dict]) -> dict:
-    """Sends customers to POST /predict/batch in chunks of up to 100 rows."""
-    chunk_size = 100
-    all_results = []
-    all_errors = []
-    band_counts = {"Bajo": 0, "Medio": 0, "Alto": 0}
-    high_risk_monthly_fee = 0.0
+def validate_csv_structure(df: pd.DataFrame, schema: dict) -> tuple[list[str], list[str]]:
+    """Validates CSV structure against the schema before any processing.
 
-    for i in range(0, len(customers_payload), chunk_size):
-        chunk = customers_payload[i : i + chunk_size]
-        ok, res = api_post("/predict/batch", {"customers": chunk})
-        if not ok:
-            err_detail = res.get("detail", "Error en solicitud batch")
-            if isinstance(err_detail, list):
-                err_detail = "; ".join([f"{e.get('loc', '')}: {e.get('msg', '')}" for e in err_detail])
-            for idx, item in enumerate(chunk, start=i + 1):
-                all_errors.append({
-                    "customer_id": item.get("customer_id"),
-                    "row_index": idx,
-                    "detail": str(err_detail),
-                })
-        else:
-            all_results.extend(res.get("results", []))
-            all_errors.extend(res.get("errors", []))
-            summary = res.get("summary", {})
-            for band, count in summary.get("band_counts", {}).items():
-                band_counts[band] = band_counts.get(band, 0) + count
-            high_risk_monthly_fee += summary.get("high_risk_monthly_fee", 0.0)
+    Returns (errors, warnings). A non-empty `errors` means the caller must
+    block processing (no "Procesar cartera" button); `warnings` are shown
+    but don't block. Cell-level type/range validation is intentionally not
+    duplicated here — that's already the backend's job per row via
+    `ClientInput`, surfaced in the batch response's `errors`.
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    if len(df) == 0:
+        errors.append("❌ El archivo no contiene registros de clientes para procesar.")
+        return errors, warnings
+
+    if "customer_id" not in df.columns:
+        errors.append(
+            "❌ El archivo no contiene la columna 'customer_id'. Todas las filas deben "
+            "tener un identificador único de cliente en una columna llamada exactamente "
+            "'customer_id'."
+        )
+    else:
+        dupes = df["customer_id"][df["customer_id"].duplicated(keep=False)].unique().tolist()
+        if dupes:
+            shown = ", ".join(str(d) for d in dupes[:20])
+            suffix = " y más" if len(dupes) > 20 else ""
+            errors.append(
+                f"❌ Se encontraron valores duplicados de 'customer_id': {shown}{suffix}. "
+                "Cada cliente debe tener un identificador único."
+            )
+
+    required = sorted(set(schema["numericas"]) | set(schema["categoricas"]))
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        errors.append(
+            f"❌ Faltan {len(missing)} columna(s) requerida(s) por el modelo: "
+            f"{', '.join(missing)}. Descargue la plantilla CSV para ver todas las "
+            "variables necesarias."
+        )
+
+    found_churn_cols = [c for c in ("churn", "actual_churn") if c in df.columns]
+    if found_churn_cols:
+        errors.append(
+            f"❌ El archivo contiene la(s) columna(s) {', '.join(found_churn_cols)}, que "
+            "no debe(n) incluirse como variable de entrada. Elimínela(s) del archivo y "
+            "vuelva a cargarlo."
+        )
+
+    if len(df) > 100:
+        errors.append(
+            f"❌ El archivo contiene {len(df)} registros, superando el máximo permitido "
+            "de 100 por carga. Divida el archivo en lotes de 100 clientes o menos."
+        )
+
+    known = {"customer_id", "churn", "actual_churn"} | set(required)
+    extra = [c for c in df.columns if c not in known]
+    if extra:
+        warnings.append(
+            f"⚠️ Se detectaron {len(extra)} columna(s) no reconocida(s) que serán "
+            f"ignoradas: {', '.join(extra)}."
+        )
+
+    return errors, warnings
+
+
+def send_batch_request(customers_payload: list[dict]) -> dict:
+    """Sends customers to POST /predict/batch in a single request (the
+    100-row cap is already enforced upstream by validate_csv_structure)."""
+    ok, res = api_post("/predict/batch", {"customers": customers_payload})
+    if not ok:
+        err_detail = res.get("detail", "Error en solicitud batch")
+        if isinstance(err_detail, list):
+            err_detail = "; ".join(f"{e.get('loc', '')}: {e.get('msg', '')}" for e in err_detail)
+        raise BackendUnavailableError(f"El backend rechazó la solicitud batch: {err_detail}")
 
     return {
-        "summary": {
-            "total": len(customers_payload),
-            "valid": len(all_results),
-            "invalid": len(all_errors),
-            "band_counts": band_counts,
-            "high_risk_monthly_fee": high_risk_monthly_fee,
-        },
-        "results": all_results,
-        "errors": all_errors,
+        "summary": res.get("summary", {}),
+        "results": res.get("results", []),
+        "errors": res.get("errors", []),
     }
 
 
-def parse_dataframe_to_payload(df: pd.DataFrame) -> tuple[list[dict], list[str]]:
-    """Converts user DataFrame to POST /predict/batch payload, extracting customer_id and features."""
-    warnings = []
-    id_col = None
-    for candidate in ["customer_id", "id", "ID", "cliente", "Cliente", "Customer_ID"]:
-        if candidate in df.columns:
-            id_col = candidate
-            break
-
-    if "churn" in df.columns or "actual_churn" in df.columns:
-        warnings.append("La columna 'churn' fue omitida automáticamente de las variables de entrada.")
-
+def parse_dataframe_to_payload(df: pd.DataFrame) -> list[dict]:
+    """Converts an already-validated DataFrame (see validate_csv_structure)
+    to the POST /predict/batch payload."""
     customers_payload = []
-    for idx, row in df.iterrows():
-        cid = str(row[id_col]) if id_col else f"CUST_{idx + 1:04d}"
+    for _, row in df.iterrows():
+        cid = str(row["customer_id"])
         features = {}
         for col in df.columns:
-            if col == id_col or col.lower() in ("churn", "actual_churn"):
+            if col == "customer_id" or col.lower() in ("churn", "actual_churn"):
                 continue
             val = row[col]
             if pd.isna(val):
@@ -432,7 +464,7 @@ def parse_dataframe_to_payload(df: pd.DataFrame) -> tuple[list[dict], list[str]]
                 features[col] = str(val)
         customers_payload.append({"customer_id": cid, "features": features})
 
-    return customers_payload, warnings
+    return customers_payload
 
 
 # -----------------------------------------------------------------------------
@@ -542,15 +574,23 @@ with tab_upload:
                 demo_cartera = get_synthetic_demo_cartera()
                 demo_df = pd.read_csv(io.StringIO(demo_cartera["csv_content"]))
                 st.session_state["batch_df"] = demo_df
-                customers_payload, parse_warnings = parse_dataframe_to_payload(demo_df)
-                with st.spinner(f"Analizando {len(customers_payload)} clientes sintéticos con `POST /predict/batch`..."):
-                    batch_res = send_batch_request(customers_payload)
-                    st.session_state["batch_result"] = batch_res
-                summary = batch_res["summary"]
-                st.success(
-                    f"¡Lote sintético cargado! **{summary['valid']} clientes válidos** analizados "
-                    f"({summary['invalid']} errores). Diríjase a las pestañas **Resumen** y **Clientes prioritarios**."
-                )
+
+                structure_errors, structure_warnings = validate_csv_structure(demo_df, schema)
+                for w in structure_warnings:
+                    st.warning(w)
+                if structure_errors:
+                    for e in structure_errors:
+                        st.error(e)
+                else:
+                    customers_payload = parse_dataframe_to_payload(demo_df)
+                    with st.spinner(f"Analizando {len(customers_payload)} clientes sintéticos con `POST /predict/batch`..."):
+                        batch_res = send_batch_request(customers_payload)
+                        st.session_state["batch_result"] = batch_res
+                    summary = batch_res["summary"]
+                    st.success(
+                        f"¡Lote sintético cargado! **{summary['valid']} clientes válidos** analizados "
+                        f"({summary['invalid']} errores). Diríjase a las pestañas **Resumen** y **Clientes prioritarios**."
+                    )
             except BackendUnavailableError as e:
                 st.error(f"Error al conectar con el backend: {e}")
             except Exception as e:
@@ -569,26 +609,32 @@ with tab_upload:
             st.markdown(f"**Vista previa del archivo cargado:** `{len(uploaded_df)} registros` y `{len(uploaded_df.columns)} columnas`")
             st.dataframe(uploaded_df.head(10), use_container_width=True)
 
-            customers_payload, parse_warnings = parse_dataframe_to_payload(uploaded_df)
-            for w in parse_warnings:
+            structure_errors, structure_warnings = validate_csv_structure(uploaded_df, schema)
+            for w in structure_warnings:
                 st.warning(w)
 
-            if st.button("🚀 Procesar cartera con el modelo", type="primary"):
-                with st.spinner(f"Analizando {len(customers_payload)} clientes mediante `POST /predict/batch`..."):
-                    batch_res = send_batch_request(customers_payload)
-                    st.session_state["batch_result"] = batch_res
+            if structure_errors:
+                for e in structure_errors:
+                    st.error(e)
+            else:
+                customers_payload = parse_dataframe_to_payload(uploaded_df)
 
-                summary = batch_res["summary"]
-                if summary["valid"] > 0:
-                    st.success(
-                        f"✅ Procesamiento completado: **{summary['valid']} clientes válidos** analizados "
-                        f"({summary['invalid']} errores aislados). Diríjase a las pestañas **Resumen** y **Clientes prioritarios** para ver los resultados."
-                    )
-                else:
-                    st.error(
-                        f"⚠️ Se procesaron {summary['total']} registros pero todos presentaron errores de validación. "
-                        "Revise el detalle de inconsistencias en la pestaña Resumen."
-                    )
+                if st.button("🚀 Procesar cartera con el modelo", type="primary"):
+                    with st.spinner(f"Analizando {len(customers_payload)} clientes mediante `POST /predict/batch`..."):
+                        batch_res = send_batch_request(customers_payload)
+                        st.session_state["batch_result"] = batch_res
+
+                    summary = batch_res["summary"]
+                    if summary["valid"] > 0:
+                        st.success(
+                            f"✅ Procesamiento completado: **{summary['valid']} clientes válidos** analizados "
+                            f"({summary['invalid']} errores aislados). Diríjase a las pestañas **Resumen** y **Clientes prioritarios** para ver los resultados."
+                        )
+                    else:
+                        st.error(
+                            f"⚠️ Se procesaron {summary['total']} registros pero todos presentaron errores de validación. "
+                            "Revise el detalle de inconsistencias en la pestaña Resumen."
+                        )
         except Exception as err:
             st.error(f"Error al leer el archivo CSV: {err}")
 
